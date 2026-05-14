@@ -80,6 +80,10 @@ function getDailyPair() {
   const now = new Date();
   const seed = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
   const rng = seededRng(seed);
+  return getRandomPair(rng);
+}
+
+function getRandomPair(rng = Math.random) {
   const idx1 = Math.floor(rng() * WORDS.length);
   let idx2;
   do { idx2 = Math.floor(rng() * WORDS.length); } while (idx2 === idx1);

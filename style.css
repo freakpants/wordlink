@@ -16,6 +16,7 @@
   --blue:        #2563eb;
   --blue-dark:   #1d4ed8;
   --blue-glow:   rgba(37,99,235,0.35);
+  --blue-soft:   rgba(37,99,235,0.18);
 
   --red-light:   #f87171;
   --red:         #dc2626;
@@ -64,6 +65,7 @@ header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
 }
 
 header h1 {
@@ -88,6 +90,12 @@ header h1 span {
   gap: 10px;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .puzzle-num {
   font-size: 0.85rem;
   color: var(--muted);
@@ -107,6 +115,36 @@ header h1 span {
   transition: background 0.15s, color 0.15s;
 }
 .icon-btn:hover { background: var(--border); color: var(--text); }
+
+.mode-switch {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.mode-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.mode-btn:hover {
+  color: var(--text);
+}
+
+.mode-btn.is-active {
+  background: var(--blue-soft);
+  color: var(--blue-light);
+}
 
 /* ── Target Words ─────────────────────────────────────── */
 #targets {
@@ -328,14 +366,6 @@ header h1 span {
   white-space: nowrap;
 }
 
-.sim-badge-detail {
-  display: block;
-  font-size: 0.60rem;
-  font-weight: 500;
-  opacity: 0.7;
-  letter-spacing: 0;
-}
-
 /* ── Placement Indicator ──────────────────────────────── */
 #placement-indicator {
   position: absolute;
@@ -363,6 +393,69 @@ header h1 span {
   max-width: 1000px;
   width: 100%;
   text-align: center;
+}
+
+#similarity-panel {
+  width: 100%;
+  max-width: 1000px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 14px 16px;
+}
+
+.similarity-panel-header {
+  margin-bottom: 10px;
+}
+
+#similarity-panel-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+#similarity-panel-subtitle {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+#similarity-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.similarity-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(71, 85, 105, 0.45);
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.similarity-word {
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: lowercase;
+}
+
+.similarity-word.start {
+  color: var(--blue-light);
+  text-transform: uppercase;
+}
+
+.similarity-word.end {
+  color: var(--red-light);
+  text-transform: uppercase;
+}
+
+.similarity-score {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--text);
 }
 
 /* ── Input Row ────────────────────────────────────────── */
@@ -442,6 +535,18 @@ header h1 span {
   transition: border-color 0.15s, color 0.15s;
 }
 .secondary-btn:hover { border-color: var(--muted); color: var(--text); }
+
+@media (max-width: 640px) {
+  header,
+  .header-right {
+    flex-wrap: wrap;
+  }
+
+  .header-right {
+    justify-content: flex-end;
+    width: 100%;
+  }
+}
 
 /* ── Modal ────────────────────────────────────────────── */
 .modal {

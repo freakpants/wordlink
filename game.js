@@ -18,6 +18,14 @@ const CONFIG = {
   simAlphaLoading: 0.25,
   simAlphaError: 0.2,
   simAlphaScale: 0.7,
+  // Human-readable closeness display: blend the game score with direct
+  // Datamuse overlap and neighbour overlap so 100% is exceptionally rare.
+  closenessScoreWeight: 0.45,
+  closenessDirectWeight: 0.45,
+  closenessNeighborhoodWeight: 0.10,
+  closenessCurvePower: 1.35,
+  closenessPerfectDirectThreshold: 0.98,
+  closenessPerfectJaccardThreshold: 0.45,
   shareUrl: 'https://freakpants.github.io/wordlink/',
 };
 
@@ -30,6 +38,7 @@ let state = {
   won:       false,
   dragInfo:  null,   // { node, offsetX, offsetY }
   placement: null,   // { x, y } – where next word will be placed
+  puzzle:    { mode: 'daily', key: todayKey() },
   similarityView: { sourceId: null, scores: {}, token: 0 },
   suppressBubbleClickUntil: 0,
 };
@@ -44,7 +53,7 @@ const relCache = {};
 // ─────────────────────────────────────────────────────────
 // DOM refs
 // ─────────────────────────────────────────────────────────
-let svg, bubblesEl, similarityOverlayEl, placementEl, wordInput, statusEl;
+let svg, bubblesEl, similarityOverlayEl, placementEl, wordInput, statusEl, similarityPanelEl, similarityListEl;
 
 // ─────────────────────────────────────────────────────────
 // Utility helpers
@@ -59,6 +68,46 @@ function simCacheKey(w1, w2) {
 
 function todayKey() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function getProgressStorageKey() {
+  return state.puzzle.mode === 'daily'
+    ? `wordlink-progress-${state.puzzle.key}`
+    : null;
+}
+
+function getBestStorageKey() {
+  return state.puzzle.mode === 'daily'
+    ? `wordlink-best-${state.puzzle.key}`
+    : null;
+}
+
+function getPuzzleLabel(mode = state.puzzle.mode) {
+  return mode === 'daily' ? `#${getPuzzleNumber()}` : 'Practice';
+}
+
+function getSimilarityDisplayPercent(sourceWord, targetWord, sim) {
+  if (sim === null || sim === undefined) return null;
+  const dbg = simDebugCache[simCacheKey(sourceWord, targetWord)];
+  let base = sim;
+  if (dbg) {
+    const neighborhood = Math.sqrt(Math.max(0, dbg.rawJaccard));
+    base = Math.min(
+      1,
+      sim * CONFIG.closenessScoreWeight +
+      dbg.directNorm * CONFIG.closenessDirectWeight +
+      neighborhood * CONFIG.closenessNeighborhoodWeight
+    );
+  }
+  const curved = 1 - Math.pow(1 - base, CONFIG.closenessCurvePower);
+  if (
+    dbg &&
+    dbg.directNorm > CONFIG.closenessPerfectDirectThreshold &&
+    dbg.rawJaccard > CONFIG.closenessPerfectJaccardThreshold
+  ) {
+    return 100;
+  }
+  return Math.min(99, Math.max(0, Math.round(curved * 100)));
 }
 
 function setStatus(msg, cls) {
@@ -265,6 +314,75 @@ function drawEdge(edge, onPath) {
   return line;
 }
 
+function renderSimilarityPanel(source) {
+  similarityPanelEl.classList.add('hidden');
+  if (!source) {
+    similarityListEl.innerHTML = '';
+    return;
+  }
+  similarityListEl.innerHTML = '';
+
+  document.getElementById('similarity-panel-title').textContent = `Closeness to "${source.word}"`;
+  document.getElementById('similarity-panel-subtitle').textContent =
+    'Sorted from closest to furthest. 100% should be exceptionally rare.';
+
+  const entries = state.nodes
+    .filter(n => n.id !== source.id)
+    .map(n => {
+      const sim = state.similarityView.scores[n.id];
+      return {
+        node: n,
+        sim,
+        percent: getSimilarityDisplayPercent(source.word, n.word, sim),
+      };
+    })
+    .sort(compareSimilarityEntries);
+
+  const frag = document.createDocumentFragment();
+  entries.forEach(({ node, sim, percent }) => {
+    const row = document.createElement('div');
+    row.className = 'similarity-row';
+
+    const word = document.createElement('span');
+    word.className = `similarity-word ${node.type}`;
+    word.textContent = node.word;
+
+    const score = document.createElement('span');
+    score.className = 'similarity-score';
+    if (percent !== null) {
+      score.textContent = `${percent}%`;
+    } else if (sim === null) {
+      score.textContent = 'N/A';
+    } else {
+      score.textContent = '…';
+    }
+
+    row.append(word, score);
+    frag.appendChild(row);
+  });
+
+  similarityListEl.appendChild(frag);
+  similarityPanelEl.classList.remove('hidden');
+}
+
+function compareSimilarityEntries(a, b) {
+  const aHasPercent = a.percent !== null;
+  const bHasPercent = b.percent !== null;
+  if (aHasPercent && bHasPercent) {
+    return b.percent - a.percent || a.node.word.localeCompare(b.node.word);
+  }
+  if (aHasPercent) return -1;
+  if (bHasPercent) return 1;
+
+  // After completed scores, keep pending loads ahead of failed lookups so the
+  // list still feels like it is actively filling in.
+  const aIsError = a.sim === null;
+  const bIsError = b.sim === null;
+  if (aIsError && !bIsError) return 1;
+  if (!aIsError && bIsError) return -1;
+  return a.node.word.localeCompare(b.node.word);
+}
+
 function updateNodeConnectedState() {
   // Mark nodes that have at least one path-strength edge
   const connected = new Set();
@@ -337,9 +455,9 @@ function checkVictory() {
   });
 
   // Save best score
-  const bestKey = `wordlink-best-${todayKey()}`;
-  const saved   = parseInt(localStorage.getItem(bestKey), 10);
-  if (isNaN(saved) || bridgeCount < saved) {
+  const bestKey = getBestStorageKey();
+  const saved   = bestKey ? parseInt(localStorage.getItem(bestKey), 10) : NaN;
+  if (bestKey && (isNaN(saved) || bridgeCount < saved)) {
     localStorage.setItem(bestKey, bridgeCount);
   }
   updateBestScore();
@@ -576,12 +694,12 @@ async function toggleSimilarityViewForNode(id) {
   state.similarityView.scores = {};
   state.similarityView.token++;
   renderSimilarityView();
-  setStatus(`Loading similarity map for "${node.word}"…`);
+  setStatus(`Loading closeness scores for "${node.word}"…`);
 
   await refreshSimilarityView();
 
   if (state.similarityView.sourceId === id) {
-    setStatus(`Similarity map for "${node.word}" (click it again to clear).`);
+    setStatus(`Showing closeness scores for "${node.word}" (click it again to clear).`);
   }
 }
 
@@ -631,10 +749,16 @@ function renderSimilarityView() {
   similarityOverlayEl.innerHTML = '';
 
   const sourceId = state.similarityView.sourceId;
-  if (!sourceId) return;
+  if (!sourceId) {
+    renderSimilarityPanel(null);
+    return;
+  }
 
   const source = state.nodes.find(n => n.id === sourceId);
-  if (!source) return;
+  if (!source) {
+    renderSimilarityPanel(null);
+    return;
+  }
   source.el.classList.add('inspect-source');
 
   state.nodes.forEach(n => {
@@ -651,19 +775,14 @@ function renderSimilarityView() {
     } else if (sim === undefined) {
       badge.textContent = '…';
     } else {
-      const dbg = simDebugCache[simCacheKey(source.word, n.word)];
-      if (dbg) {
-        badge.innerHTML =
-          `${Math.round(sim * 100)}%` +
-          `<span class="sim-badge-detail">D:${Math.round(dbg.directNorm * 100)}% N:${Math.round(dbg.rawJaccard * 100)}%</span>`;
-      } else {
-        badge.textContent = `${Math.round(sim * 100)}%`;
-      }
+      badge.textContent = `${getSimilarityDisplayPercent(source.word, n.word, sim)}%`;
     }
     badge.style.left = `${n.x}px`;
     badge.style.top = `${getSimilarityBadgeTop(n.y)}px`;
     similarityOverlayEl.appendChild(badge);
   });
+
+  renderSimilarityPanel(source);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -675,7 +794,12 @@ function updateWordCount() {
 }
 
 function updateBestScore() {
-  const saved = parseInt(localStorage.getItem(`wordlink-best-${todayKey()}`), 10);
+  const key = getBestStorageKey();
+  if (!key) {
+    document.getElementById('best-score').textContent = '–';
+    return;
+  }
+  const saved = parseInt(localStorage.getItem(key), 10);
   document.getElementById('best-score').textContent = isNaN(saved) ? '–' : saved;
 }
 
@@ -683,15 +807,19 @@ function updateBestScore() {
 // Local-storage persistence
 // ─────────────────────────────────────────────────────────
 function saveProgress(won) {
+  const key = getProgressStorageKey();
+  if (!key) return;
   const bridges = state.nodes
     .filter(n => n.type === 'bridge')
     .map(n => ({ word: n.word, x: n.x, y: n.y }));
   const data = { bridges, won };
-  localStorage.setItem(`wordlink-progress-${todayKey()}`, JSON.stringify(data));
+  localStorage.setItem(key, JSON.stringify(data));
 }
 
 function loadProgress() {
-  const raw = localStorage.getItem(`wordlink-progress-${todayKey()}`);
+  const key = getProgressStorageKey();
+  if (!key) return;
+  const raw = localStorage.getItem(key);
   if (!raw) return;
   try {
     const data = JSON.parse(raw);
@@ -726,19 +854,89 @@ async function restoreSimilarities(words) {
 // ─────────────────────────────────────────────────────────
 // Reset / Undo
 // ─────────────────────────────────────────────────────────
-function resetGame() {
+function setPuzzleModeButtons() {
+  document.getElementById('daily-mode-btn').classList.toggle('is-active', state.puzzle.mode === 'daily');
+  document.getElementById('practice-mode-btn').classList.toggle('is-active', state.puzzle.mode === 'practice');
+}
+
+function clearBoard() {
+  state.nodes.forEach(n => n.el.remove());
+  state.nodes = [];
+  state.edges = [];
+  state.won = false;
+  state.dragInfo = null;
+  state.placement = null;
+  wordInput.value = '';
+  clearSimilarityView(false);
+  svg.innerHTML = '';
+  placementEl.classList.add('hidden');
+  document.getElementById('victory-modal').classList.add('hidden');
+  updateWordCount();
+  setStatus('');
+}
+
+function startPuzzle(mode, { force = false } = {}) {
+  const hasBridges = state.nodes.some(n => n.type === 'bridge');
+  if (!force && hasBridges) {
+    const nextLabel = mode === 'daily' ? 'today’s daily puzzle' : 'a new practice puzzle';
+    if (!confirm(`Start ${nextLabel}? Your current board will be cleared.`)) return;
+  }
+
+  clearBoard();
+
+  state.puzzle = {
+    mode,
+    key: mode === 'daily' ? todayKey() : `practice-${Date.now()}`,
+  };
+
+  const [startWord, endWord] = mode === 'daily' ? getDailyPair() : getRandomPair();
+  document.getElementById('word-start').textContent = startWord;
+  document.getElementById('word-end').textContent = endWord;
+  document.getElementById('puzzle-number').textContent = getPuzzleLabel(mode);
+  setPuzzleModeButtons();
+
+  createNode(startWord, CONFIG.startX, CONFIG.startY, 'start');
+  createNode(endWord, CONFIG.endX, CONFIG.endY, 'end');
+
+  fetchRelated(startWord).catch(() => {});
+  fetchRelated(endWord).catch(() => {});
+
+  updateBestScore();
+  if (mode === 'daily') {
+    loadProgress();
+  }
+  wordInput.focus();
+}
+
+function startNewPracticePuzzle() {
+  if (!confirm('Start a new random practice puzzle?')) return;
+  startPuzzle('practice', { force: true });
+}
+
+function resetDailyBoard() {
   if (!confirm('Reset the board? Your progress will be lost.')) return;
-  state.nodes.filter(n => n.type === 'bridge').forEach(n => n.el.remove());
+  state.nodes
+    .filter(n => n.type === 'bridge')
+    .forEach(n => n.el.remove());
   state.nodes = state.nodes.filter(n => n.type !== 'bridge');
   state.edges = [];
-  state.won   = false;
+  state.won = false;
   state.placement = null;
   clearSimilarityView(false);
   svg.innerHTML = '';
   placementEl.classList.add('hidden');
   updateWordCount();
   setStatus('');
-  localStorage.removeItem(`wordlink-progress-${todayKey()}`);
+  const key = getProgressStorageKey();
+  if (key) localStorage.removeItem(key);
+}
+
+function resetGame() {
+  if (state.puzzle.mode === 'practice') {
+    startNewPracticePuzzle();
+    return;
+  }
+  resetDailyBoard();
 }
 
 function undoLast() {
@@ -759,26 +957,12 @@ function init() {
   placementEl = document.getElementById('placement-indicator');
   wordInput  = document.getElementById('word-input');
   statusEl   = document.getElementById('status-message');
+  similarityPanelEl = document.getElementById('similarity-panel');
+  similarityListEl = document.getElementById('similarity-list');
 
   // Size the SVG
   svg.setAttribute('width',  CONFIG.canvasW);
   svg.setAttribute('height', CONFIG.canvasH);
-
-  // Daily word pair
-  const [startWord, endWord] = getDailyPair();
-  document.getElementById('word-start').textContent = startWord;
-  document.getElementById('word-end').textContent   = endWord;
-  document.getElementById('puzzle-number').textContent = `#${getPuzzleNumber()}`;
-
-  // Create anchor nodes
-  createNode(startWord, CONFIG.startX, CONFIG.startY, 'start');
-  createNode(endWord,   CONFIG.endX,   CONFIG.endY,   'end');
-
-  // Pre-warm similarity cache for anchors (best-effort, no await)
-  fetchRelated(startWord).catch(() => {});
-  fetchRelated(endWord).catch(() => {});
-
-  updateBestScore();
 
   // Canvas click
   document.getElementById('game-canvas').addEventListener('click', onCanvasClick);
@@ -798,6 +982,8 @@ function init() {
   // Reset / Undo
   document.getElementById('reset-btn').addEventListener('click', resetGame);
   document.getElementById('undo-btn').addEventListener('click', undoLast);
+  document.getElementById('daily-mode-btn').addEventListener('click', () => startPuzzle('daily'));
+  document.getElementById('practice-mode-btn').addEventListener('click', () => startPuzzle('practice'));
 
   // Victory modal actions
   document.getElementById('copy-result-btn').addEventListener('click', e => {
@@ -827,8 +1013,7 @@ function init() {
     document.getElementById('help-modal').classList.add('hidden');
   });
 
-  // Restore saved progress
-  loadProgress();
+  startPuzzle('daily', { force: true });
 }
 
 // Start once DOM is ready
