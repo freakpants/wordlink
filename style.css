@@ -16,6 +16,7 @@
   --blue:        #2563eb;
   --blue-dark:   #1d4ed8;
   --blue-glow:   rgba(37,99,235,0.35);
+  --blue-soft:   rgba(37,99,235,0.18);
 
   --red-light:   #f87171;
   --red:         #dc2626;
@@ -141,7 +142,7 @@ header h1 span {
 }
 
 .mode-btn.is-active {
-  background: rgba(37,99,235,0.18);
+  background: var(--blue-soft);
   color: var(--blue-light);
 }
 

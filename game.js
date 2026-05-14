@@ -18,6 +18,14 @@ const CONFIG = {
   simAlphaLoading: 0.25,
   simAlphaError: 0.2,
   simAlphaScale: 0.7,
+  // Human-readable closeness display: blend the game score with direct
+  // Datamuse overlap and neighbour overlap so 100% is exceptionally rare.
+  closenessScoreWeight: 0.45,
+  closenessDirectWeight: 0.45,
+  closenessNeighborhoodWeight: 0.10,
+  closenessCurvePower: 1.35,
+  closenessPerfectDirectThreshold: 0.98,
+  closenessPerfectJaccardThreshold: 0.45,
   shareUrl: 'https://freakpants.github.io/wordlink/',
 };
 
@@ -84,10 +92,21 @@ function getSimilarityDisplayPercent(sourceWord, targetWord, sim) {
   let base = sim;
   if (dbg) {
     const neighborhood = Math.sqrt(Math.max(0, dbg.rawJaccard));
-    base = Math.min(1, sim * 0.45 + dbg.directNorm * 0.45 + neighborhood * 0.10);
+    base = Math.min(
+      1,
+      sim * CONFIG.closenessScoreWeight +
+      dbg.directNorm * CONFIG.closenessDirectWeight +
+      neighborhood * CONFIG.closenessNeighborhoodWeight
+    );
   }
-  const curved = 1 - Math.pow(1 - base, 1.35);
-  if (dbg && dbg.directNorm > 0.98 && dbg.rawJaccard > 0.45) return 100;
+  const curved = 1 - Math.pow(1 - base, CONFIG.closenessCurvePower);
+  if (
+    dbg &&
+    dbg.directNorm > CONFIG.closenessPerfectDirectThreshold &&
+    dbg.rawJaccard > CONFIG.closenessPerfectJaccardThreshold
+  ) {
+    return 100;
+  }
   return Math.min(99, Math.max(0, Math.round(curved * 100)));
 }
 
@@ -341,22 +360,6 @@ function renderSimilarityPanel(source) {
 
   similarityListEl.appendChild(frag);
   similarityPanelEl.classList.remove('hidden');
-}
-
-function compareSimilarityEntries(a, b) {
-  const aHasPercent = a.percent !== null;
-  const bHasPercent = b.percent !== null;
-  if (aHasPercent && bHasPercent) {
-    return b.percent - a.percent || a.node.word.localeCompare(b.node.word);
-  }
-  if (aHasPercent) return -1;
-  if (bHasPercent) return 1;
-
-  const aIsError = a.sim === null;
-  const bIsError = b.sim === null;
-  if (aIsError && !bIsError) return -1;
-  if (!aIsError && bIsError) return 1;
-  return a.node.word.localeCompare(b.node.word);
 }
 
 function compareSimilarityEntries(a, b) {
