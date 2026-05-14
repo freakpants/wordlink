@@ -193,6 +193,12 @@ header h1 span {
   pointer-events: none;
 }
 
+#similarity-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
 /* ── Word Bubble ──────────────────────────────────────── */
 .word-bubble {
   position: absolute;
@@ -299,6 +305,31 @@ header h1 span {
   background: #3f1515;
   border-color: var(--red-light);
   color: #fca5a5;
+}
+
+.word-bubble.inspect-source {
+  outline: 3px solid var(--amber-light);
+  outline-offset: 2px;
+}
+
+.word-bubble.inspect-target {
+  outline: 2px solid rgba(96, 165, 250, var(--inspect-alpha, 0.35));
+  outline-offset: 1px;
+}
+
+.sim-badge {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  background: rgba(15, 23, 42, 0.9);
+  color: var(--text);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 /* ── Placement Indicator ──────────────────────────────── */
