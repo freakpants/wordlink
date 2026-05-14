@@ -27,6 +27,9 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
+      - name: Inject commit SHA
+        run: sed -i "s/__COMMIT_SHA__/$(git rev-parse --short HEAD)/g" index.html
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

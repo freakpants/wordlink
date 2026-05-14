@@ -12,8 +12,9 @@
     <!-- ── Header ────────────────────────────────────────── -->
     <header>
       <div class="header-left">
-        <h1>🔗 <span>WordLink</span></h1>
+        <h1><span>WordLink</span></h1>
         <span id="puzzle-number" class="puzzle-num">#1</span>
+        <span id="puzzle-date" class="puzzle-date"></span>
       </div>
       <div class="header-right">
         <div class="mode-switch" role="group" aria-label="Puzzle mode">
@@ -21,6 +22,7 @@
           <button id="practice-mode-btn" class="mode-btn" type="button">Practice</button>
         </div>
         <button id="how-to-btn" class="icon-btn" title="How to play">?</button>
+        <span id="version-tag" class="version-tag">__COMMIT_SHA__</span>
       </div>
     </header>
 
@@ -58,7 +60,6 @@
     <p id="canvas-hint">Type a word and WordLink will place it for you. Click any bubble to inspect two-decimal-place closeness scores.</p>
     <div id="link-legend" aria-label="Link legend">
       <span class="legend-item"><span class="legend-swatch gray-bubble" aria-hidden="true"></span>Gray bubble = your bridge word</span>
-      <span class="legend-item"><span class="legend-swatch gray-line" aria-hidden="true"></span>Gray link = ordinary connection at <strong data-link-threshold>10.00%</strong>+</span>
       <span class="legend-item"><span class="legend-swatch amber-line" aria-hidden="true"></span>Amber link = winning chain at <strong data-path-threshold>16.00%</strong>+</span>
     </div>
 
@@ -93,7 +94,6 @@
     <!-- ── Bottom Controls ──────────────────────────────────── -->
     <div id="bottom-controls">
       <button id="reset-btn" class="secondary-btn">Reset</button>
-      <button id="undo-btn" class="secondary-btn">Undo</button>
     </div>
 
   </div><!-- #app -->
@@ -102,7 +102,6 @@
   <div id="victory-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="victory-title">
     <div class="modal-backdrop"></div>
     <div class="modal-box">
-      <div class="modal-emoji">🎉</div>
       <h2 id="victory-title">Path Found!</h2>
       <p>You connected the words using <strong id="final-score">0</strong> bridge word(s).</p>
       <div id="path-display"></div>
@@ -122,13 +121,12 @@
         <li>Each day you get two <strong>anchor words</strong> (shown in blue and red) placed on the canvas.</li>
         <li><strong>Type</strong> a bridge word and WordLink will place it automatically.</li>
         <li>Press <kbd>Enter</kbd> or click <strong>Add</strong> to submit it.</li>
-        <li>Gray bubbles are your bridge words. Gray links appear at <strong data-link-threshold>10.00%</strong>+ similarity.</li>
-        <li>Amber links mark the winning chain, and every edge in that chain must hit <strong data-path-threshold>16.00%</strong>+.</li>
+        <li>Gray bubbles are your bridge words. Links appear at <strong data-path-threshold>16.00%</strong>+ similarity — these are the connections that count.</li>
         <li>Click any bubble to see how close it is to every other word on a clearer 0-100% scale with two decimals.</li>
         <li>Build a chain of connected words from the blue word to the red word.</li>
         <li>Your score = number of bridge words used. <strong>Fewer is better!</strong></li>
       </ol>
-      <p class="tip">💡 Drag any bridge word to reposition it and form new connections. Practice links use a bare puzzle number in the URL for easy sharing.</p>
+      <p class="tip">Drag any bridge word to reposition it and form new connections. Practice links use a bare puzzle number in the URL for easy sharing.</p>
       <button id="close-help-btn" class="primary-btn">Got it!</button>
     </div>
   </div>

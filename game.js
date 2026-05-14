@@ -94,6 +94,24 @@ function getPuzzleLabel(mode = state.puzzle.mode) {
   return state.puzzle.gameId ? `#${state.puzzle.gameId}` : 'Practice';
 }
 
+function getPuzzleDateLabel(mode = state.puzzle.mode) {
+  if (mode === 'daily') {
+    const d = getDateFromPuzzleNumber(getPuzzleNumber());
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+  if (state.puzzle.gameId) {
+    const d = getDateFromPuzzleNumber(state.puzzle.gameId);
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  return '';
+}
+
+function updatePuzzleLabel() {
+  document.getElementById('puzzle-number').textContent = getPuzzleLabel();
+  const dateEl = document.getElementById('puzzle-date');
+  if (dateEl) dateEl.textContent = getPuzzleDateLabel();
+}
+
 function getPracticeGameIdFromUrl() {
   // The app now emits bare-number query strings like `?42`, but we still accept
   // older `?gid=42`, `#42`, and trailing `/42` formats for shared legacy links.
@@ -293,7 +311,6 @@ function createNode(word, x, y, type) {
   if (type === 'bridge') {
     el.addEventListener('mousedown',  e => onBubbleMouseDown(e, id));
     el.addEventListener('touchstart', e => onBubbleTouchStart(e, id), { passive: false });
-    el.addEventListener('dblclick', () => removeNode(id));
   }
 
   bubblesEl.appendChild(el);
@@ -415,7 +432,7 @@ function rebuildEdges() {
       const b = state.nodes[j];
       const key = simCacheKey(a.word, b.word);
       const sim = simCache[key];
-      if (sim !== undefined && sim >= CONFIG.minSimilarity) {
+      if (sim !== undefined && sim >= CONFIG.pathSimilarity) {
         state.edges.push({ from: a, to: b, similarity: sim });
       }
     }
@@ -465,7 +482,7 @@ function renderSimilarityPanel(source) {
 
   document.getElementById('similarity-panel-title').textContent = `Closeness to "${source.word}"`;
   document.getElementById('similarity-panel-subtitle').textContent =
-    `Sorted from closest to furthest on a two-decimal 0-100 closeness scale. Visible links start at ${getVisibleLinkThresholdLabel()}.`;
+    `Sorted from closest to furthest on a two-decimal 0-100 closeness scale. Links count at ${getWinningLinkThresholdLabel()}+.`;
 
   const entries = state.nodes
     .filter(n => n.id !== source.id)
@@ -624,13 +641,13 @@ function checkVictory() {
   // Build share text and store on button
   const shareBtn = document.getElementById('copy-result-btn');
   const puzzleNum = document.getElementById('puzzle-number').textContent;
-  const chain = path.map(n => n.word).join(' → ');
+  const chain = path.map(n => `||${n.word}||`).join(' → ');
   const shareText =
-    `WordLink ${puzzleNum} 🔗\n${chain}\nCompleted in ${bridgeCount} bridge word${bridgeCount !== 1 ? 's' : ''}!\n${getPuzzleShareUrl()}`;
+    `WordLink ${puzzleNum}\n${chain}\nCompleted in ${bridgeCount} bridge word${bridgeCount !== 1 ? 's' : ''}!\n${getPuzzleShareUrl()}`;
   shareBtn.dataset.shareText = shareText;
 
   saveProgress(true);
-  setStatus(`Path found. Gray links needed ${getVisibleLinkThresholdLabel()}+, and your winning chain hit ${getWinningLinkThresholdLabel()}+.`, 'success');
+  setStatus(`Path found. Your winning chain hit ${getWinningLinkThresholdLabel()}+.`, 'success');
 
   // Show modal after a short pause so the path highlight is visible
   setTimeout(() => {
@@ -699,7 +716,7 @@ async function addWord() {
   if (similarityFailed) {
     setStatus(`Added "${word}", but some closeness checks are still missing.`, 'error');
   } else {
-    setStatus(`Added "${word}". Gray bubbles are bridge words; links appear at ${getVisibleLinkThresholdLabel()}+.`, 'success');
+    setStatus(`Added "${word}". Links appear at ${getWinningLinkThresholdLabel()}+.`, 'success');
   }
 
   rebuildEdges();
@@ -803,7 +820,7 @@ function onCanvasClick(e) {
   if (e.target.classList.contains('word-bubble')) return;
   clearSimilarityView(false);
   wordInput.focus();
-  setStatus(`WordLink places new bridge words automatically. Gray links appear at ${getVisibleLinkThresholdLabel()}+, and a win needs ${getWinningLinkThresholdLabel()}+.`);
+  setStatus(`WordLink places new bridge words automatically. Links appear at ${getWinningLinkThresholdLabel()}+ to count toward your path.`);
 }
 
 function onBubbleClick(e, id) {
@@ -1071,6 +1088,8 @@ async function startPuzzle(mode, { force = false, gameId = null } = {}) {
   document.getElementById('word-start').textContent = '…';
   document.getElementById('word-end').textContent = '…';
   document.getElementById('puzzle-number').textContent = getPuzzleLabel(mode);
+  const dateEl = document.getElementById('puzzle-date');
+  if (dateEl) dateEl.textContent = '';
   setPuzzleModeButtons();
   syncPuzzleUrl();
   updateBestScore();
@@ -1083,7 +1102,7 @@ async function startPuzzle(mode, { force = false, gameId = null } = {}) {
 
   document.getElementById('word-start').textContent = startWord;
   document.getElementById('word-end').textContent = endWord;
-  document.getElementById('puzzle-number').textContent = getPuzzleLabel(mode);
+  updatePuzzleLabel();
 
   createNode(startWord, CONFIG.startX, CONFIG.startY, 'start');
   createNode(endWord, CONFIG.endX, CONFIG.endY, 'end');
@@ -1096,7 +1115,7 @@ async function startPuzzle(mode, { force = false, gameId = null } = {}) {
 
   rebuildEdges();
   loadProgress();
-  setStatus(`Gray bubbles are your bridge words. Gray links appear at ${getVisibleLinkThresholdLabel()}+, and a win needs ${getWinningLinkThresholdLabel()}+ links.`);
+  setStatus(`Gray bubbles are your bridge words. Links appear at ${getWinningLinkThresholdLabel()}+, and a win needs a full path.`);
   wordInput.focus();
 }
 
@@ -1169,9 +1188,8 @@ function init() {
   document.addEventListener('touchmove', onDocTouchMove, { passive: false });
   document.addEventListener('touchend',  onDocTouchEnd);
 
-  // Reset / Undo
+  // Reset
   document.getElementById('reset-btn').addEventListener('click', resetGame);
-  document.getElementById('undo-btn').addEventListener('click', undoLast);
   document.getElementById('daily-mode-btn').addEventListener('click', () => startPuzzle('daily'));
   document.getElementById('practice-mode-btn').addEventListener('click', () => startPuzzle('practice'));
 

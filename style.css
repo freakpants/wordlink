@@ -102,6 +102,19 @@ header h1 span {
   font-weight: 500;
 }
 
+.puzzle-date {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.version-tag {
+  font-size: 0.7rem;
+  color: var(--border);
+  font-family: monospace;
+  user-select: none;
+}
+
 .icon-btn {
   width: 32px;
   height: 32px;
