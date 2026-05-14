@@ -8,8 +8,7 @@ const CONFIG = {
   canvasH: 560,
   startX: 100, startY: 280,
   endX:   900, endY:   280,
-  minSimilarity:    0.10,  // normalized [0,1] – weakest visible link
-  pathSimilarity:   0.16,  // normalized – required to count as path edge
+  pathSimilarity:   0.16,  // normalized – links exist at or above this threshold
   anchorMaxSimilarity: 0.08, // keep anchor pairs from starting as a direct link
   anchorPairCandidateCount: 12,
   maxBridgeWords:   25,
@@ -156,18 +155,11 @@ function formatPercent(value) {
   return `${Number(value).toFixed(CONFIG.displayDecimals)}%`;
 }
 
-function getVisibleLinkThresholdLabel() {
-  return formatPercent(CONFIG.minSimilarity * 100);
-}
-
 function getWinningLinkThresholdLabel() {
   return formatPercent(CONFIG.pathSimilarity * 100);
 }
 
 function updateThresholdCopy() {
-  document.querySelectorAll('[data-link-threshold]').forEach(el => {
-    el.textContent = getVisibleLinkThresholdLabel();
-  });
   document.querySelectorAll('[data-path-threshold]').forEach(el => {
     el.textContent = getWinningLinkThresholdLabel();
   });
