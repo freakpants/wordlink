@@ -12,6 +12,12 @@ const CONFIG = {
   minSimilarity:    0.10,  // normalized [0,1] – weakest visible link
   pathSimilarity:   0.16,  // normalized – required to count as path edge
   maxBridgeWords:   25,
+  dragClickSuppressMs: 180,
+  simBadgeOffsetY: 26,
+  simBadgeBottomMargin: 10,
+  simAlphaLoading: 0.25,
+  simAlphaError: 0.2,
+  simAlphaScale: 0.7,
   shareUrl: 'https://freakpants.github.io/wordlink/',
 };
 
@@ -25,7 +31,7 @@ let state = {
   dragInfo:  null,   // { node, offsetX, offsetY }
   placement: null,   // { x, y } – where next word will be placed
   similarityView: { sourceId: null, scores: {}, token: 0 },
-  suppressBubbleClick: false,
+  suppressBubbleClickUntil: 0,
 };
 
 // Similarity cache: "word1:word2" → score 0‒1
@@ -63,6 +69,12 @@ function shakeInput() {
   void wordInput.offsetWidth; // force reflow
   wordInput.classList.add('shake');
   wordInput.addEventListener('animationend', () => wordInput.classList.remove('shake'), { once: true });
+}
+
+function getSimilarityInspectAlpha(sim) {
+  if (sim === null) return CONFIG.simAlphaError;
+  if (sim === undefined) return CONFIG.simAlphaLoading;
+  return CONFIG.simAlphaLoading + sim * CONFIG.simAlphaScale;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -427,8 +439,7 @@ function onDocMouseMove(e) {
 function onDocMouseUp() {
   if (!state.dragInfo) return;
   if (state.dragInfo.moved) {
-    state.suppressBubbleClick = true;
-    setTimeout(() => { state.suppressBubbleClick = false; }, 0);
+    state.suppressBubbleClickUntil = performance.now() + CONFIG.dragClickSuppressMs;
   }
   state.dragInfo = null;
   saveProgress(false);
@@ -462,8 +473,7 @@ function onDocTouchMove(e) {
 function onDocTouchEnd() {
   if (!state.dragInfo) return;
   if (state.dragInfo.moved) {
-    state.suppressBubbleClick = true;
-    setTimeout(() => { state.suppressBubbleClick = false; }, 0);
+    state.suppressBubbleClickUntil = performance.now() + CONFIG.dragClickSuppressMs;
   }
   state.dragInfo = null;
   saveProgress(false);
@@ -495,8 +505,7 @@ function clearPlacement() {
 
 function onBubbleClick(e, id) {
   e.stopPropagation();
-  if (state.suppressBubbleClick) {
-    state.suppressBubbleClick = false;
+  if (performance.now() < state.suppressBubbleClickUntil) {
     return;
   }
   toggleSimilarityViewForNode(id);
@@ -586,7 +595,7 @@ function renderSimilarityView() {
   state.nodes.forEach(n => {
     if (n.id === sourceId) return;
     const sim = state.similarityView.scores[n.id];
-    const alpha = sim === null ? 0.2 : (sim === undefined ? 0.25 : 0.25 + sim * 0.7);
+    const alpha = getSimilarityInspectAlpha(sim);
     n.el.classList.add('inspect-target');
     n.el.style.setProperty('--inspect-alpha', alpha.toFixed(2));
 
@@ -594,7 +603,7 @@ function renderSimilarityView() {
     badge.className = 'sim-badge';
     badge.textContent = sim === null ? 'err' : (sim === undefined ? '…' : `${Math.round(sim * 100)}%`);
     badge.style.left = `${n.x}px`;
-    badge.style.top = `${Math.min(CONFIG.canvasH - 10, n.y + 26)}px`;
+    badge.style.top = `${Math.min(CONFIG.canvasH - CONFIG.simBadgeBottomMargin, n.y + CONFIG.simBadgeOffsetY)}px`;
     similarityOverlayEl.appendChild(badge);
   });
 }
