@@ -356,7 +356,60 @@ const DICTIONARY_WORDS = [
   'horses', 'hungry', 'informed', 'innocent',
 ];
 
-const WORDS = [...CURATED_WORDS, ...DICTIONARY_WORDS];
+// Filter obviously non-standard entries so anchor words stay clean and
+// dictionary-like (misspellings/slang/profanity/technical tokens).
+const NON_STANDARD_WORDS = new Set([
+  // Common misspellings / contraction-stripped forms.
+  'dont', 'thats', 'lets', 'gonna', 'wanna', 'gotta', 'kinda', 'haha',
+  // Technical tokens.
+  'http',
+  // Profanity / explicit terms.
+  'bitch', 'bullshit', 'damn', 'fucked', 'hell', 'porn',
+]);
+
+function isUsableWord(word) {
+  return /^[a-z]+$/.test(word) && word.length >= 3 && !NON_STANDARD_WORDS.has(word);
+}
+
+const BASE_WORDS = [...new Set([...CURATED_WORDS, ...DICTIONARY_WORDS]
+  .map(w => String(w || '').trim().toLowerCase())
+  .filter(isUsableWord)
+)];
+
+let libraryWords = [];
+let libraryWordsPromise = null;
+
+async function loadLibraryWords() {
+  if (libraryWords.length) return libraryWords;
+  if (libraryWordsPromise) return libraryWordsPromise;
+
+  const patterns = ['????', '?????', '??????', '???????'];
+  libraryWordsPromise = Promise.all(
+    patterns.map(sp =>
+      fetch(`https://api.datamuse.com/words?sp=${encodeURIComponent(sp)}&max=200`)
+        .then(r => (r.ok ? r.json() : []))
+        .catch(err => {
+          console.warn(`Could not load Datamuse library words for pattern "${sp}".`, err);
+          return [];
+        })
+    )
+  )
+    .then(groups => {
+      const merged = groups.flat().map(x => String(x.word || '').toLowerCase());
+      libraryWords = [...new Set(merged.filter(isUsableWord))];
+      return libraryWords;
+    })
+    .catch(() => [])
+    .finally(() => {
+      libraryWordsPromise = null;
+    });
+
+  return libraryWordsPromise;
+}
+
+function getWordPool() {
+  return libraryWords.length ? [...BASE_WORDS, ...libraryWords] : BASE_WORDS;
+}
 
 // ─────────────────────────────────────────────────────────
 // Seeded PRNG (splitmix32)
@@ -371,30 +424,33 @@ function seededRng(seed) {
   };
 }
 
-function seedFromGameId(gameId) {
-  // 32-bit FNV-1a hash for stable, deterministic seed derivation from IDs.
-  const source = String(gameId || '').toLowerCase();
-  let hash = 2166136261;
-  for (let i = 0; i < source.length; i++) {
-    hash ^= source.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
 function normalizePracticeGameId(gameId) {
-  const normalized = String(gameId || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, '')
-    .slice(0, 20);
-  return normalized || null;
+  const parsed = Number.parseInt(String(gameId || '').trim(), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return null;
+  const latestPastPuzzle = Math.max(1, getPuzzleNumber() - 1);
+  return Math.min(parsed, latestPastPuzzle);
 }
 
 function createPracticeGameId() {
-  const now = Date.now() >>> 0;
-  const rand = Math.floor(Math.random() * 0xffffffff) >>> 0;
-  return (now ^ rand).toString(36);
+  const latestPastPuzzle = Math.max(1, getPuzzleNumber() - 1);
+  return 1 + Math.floor(Math.random() * latestPastPuzzle);
+}
+
+function getDateFromPuzzleNumber(puzzleNumber) {
+  const dayNum = Math.max(1, Number.parseInt(puzzleNumber, 10) || 1);
+  const date = new Date('2025-01-01T00:00:00');
+  date.setDate(date.getDate() + dayNum - 1);
+  return date;
+}
+
+function getDailyPairForDate(date) {
+  const seed = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
+  const rng = seededRng(seed);
+  return getRandomPair(rng);
+}
+
+function getDailyPairForPuzzleNumber(puzzleNumber) {
+  return getDailyPairForDate(getDateFromPuzzleNumber(puzzleNumber));
 }
 
 /**
@@ -402,24 +458,20 @@ function createPracticeGameId() {
  * All players on the same calendar day receive the same pair.
  */
 function getDailyPair() {
-  const now = new Date();
-  const seed = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
-  const rng = seededRng(seed);
-  return getRandomPair(rng);
+  return getDailyPairForDate(new Date());
 }
 
 function getPracticePair(gameId) {
-  const normalized = normalizePracticeGameId(gameId);
-  const seed = normalized ? seedFromGameId(normalized) : (Date.now() >>> 0);
-  const rng = seededRng(seed);
-  return getRandomPair(rng);
+  const puzzleNumber = normalizePracticeGameId(gameId) || createPracticeGameId();
+  return getDailyPairForPuzzleNumber(puzzleNumber);
 }
 
 function getRandomPair(rng = Math.random) {
-  const idx1 = Math.floor(rng() * WORDS.length);
+  const words = getWordPool();
+  const idx1 = Math.floor(rng() * words.length);
   let idx2;
-  do { idx2 = Math.floor(rng() * WORDS.length); } while (idx2 === idx1);
-  return [WORDS[idx1], WORDS[idx2]];
+  do { idx2 = Math.floor(rng() * words.length); } while (idx2 === idx1);
+  return [words[idx1], words[idx2]];
 }
 
 /**
