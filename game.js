@@ -998,7 +998,12 @@ function clampZoom(value) {
 }
 
 function updateZoomUi() {
-  if (zoomRangeEl) zoomRangeEl.value = state.view.zoom.toFixed(2);
+  if (zoomRangeEl) {
+    const zoomPercent = Math.round(state.view.zoom * 100);
+    zoomRangeEl.value = state.view.zoom.toFixed(2);
+    zoomRangeEl.setAttribute('aria-valuetext', `${zoomPercent}%`);
+    zoomRangeEl.setAttribute('aria-valuenow', String(zoomPercent));
+  }
   const resetBtn = document.getElementById('zoom-reset-btn');
   if (resetBtn) resetBtn.textContent = `${Math.round(state.view.zoom * 100)}%`;
 }
@@ -1051,6 +1056,23 @@ function onCanvasWheel(e) {
   e.preventDefault();
   const delta = e.deltaY < 0 ? CONFIG.zoomStep : -CONFIG.zoomStep;
   applyCanvasZoom(state.view.zoom + delta, { anchorClientX: e.clientX, anchorClientY: e.clientY });
+}
+
+function onCanvasViewportKeyDown(e) {
+  if (e.key === '+' || e.key === '=') {
+    e.preventDefault();
+    applyCanvasZoom(state.view.zoom + CONFIG.zoomStep);
+    return;
+  }
+  if (e.key === '-') {
+    e.preventDefault();
+    applyCanvasZoom(state.view.zoom - CONFIG.zoomStep);
+    return;
+  }
+  if (e.key === '0') {
+    e.preventDefault();
+    applyCanvasZoom(CONFIG.zoomDefault);
+  }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -1290,6 +1312,7 @@ function init() {
   // Canvas click
   canvasEl.addEventListener('click', onCanvasClick);
   canvasViewportEl.addEventListener('wheel', onCanvasWheel, { passive: false });
+  canvasViewportEl.addEventListener('keydown', onCanvasViewportKeyDown);
   document.getElementById('zoom-in-btn').addEventListener('click', () => applyCanvasZoom(state.view.zoom + CONFIG.zoomStep));
   document.getElementById('zoom-out-btn').addEventListener('click', () => applyCanvasZoom(state.view.zoom - CONFIG.zoomStep));
   document.getElementById('zoom-reset-btn').addEventListener('click', () => applyCanvasZoom(CONFIG.zoomDefault));
