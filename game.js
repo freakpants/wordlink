@@ -25,6 +25,8 @@ const CONFIG = {
   closenessNeighborhoodWeight: 0.35,
   closenessEdgeWeight: 0.10,
   closenessPerfectThreshold: 0.999,
+  // Treat the lowest ~2% of normalized scores as a dedicated low-end band so
+  // tiny-but-nonzero values are spread instead of collapsing at 0.01%.
   closenessFloorEpsilon: 0.02,
   closenessCurveStrength: 2.2, // empirically tuned for observed Datamuse sims (~0.15-0.85) to spread the mid-range
   closenessDisplayMin: 5,      // keep non-zero scores away from hard 0%
@@ -317,8 +319,6 @@ function createNode(word, x, y, type) {
   const el = document.createElement('div');
   el.className = `word-bubble ${type}`;
   el.textContent = word;
-  el.style.left = `${x}px`;
-  el.style.top  = `${y}px`;
   el.dataset.id = id;
   el.addEventListener('click', e => onBubbleClick(e, id));
 
@@ -943,7 +943,10 @@ function focusSimilarityOnNode(id) {
   });
   state.similarityView.token++;
   renderSimilarityView();
-  refreshSimilarityView();
+  const hasMissingScores = state.nodes.some(n =>
+    n.id !== id && state.similarityView.scores[n.id] === undefined
+  );
+  if (hasMissingScores) refreshSimilarityView();
 }
 
 function renderSimilarityView() {
