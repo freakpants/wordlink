@@ -1,6 +1,6 @@
 // words.js – word pool for WordLink; daily pair is seeded by date
 
-const CORE_WORDS = [
+const CURATED_WORDS = [
   'ocean', 'mountain', 'fire', 'ice', 'rain', 'snow', 'wind', 'storm',
   'thunder', 'lightning', 'flood', 'drought', 'frost', 'fog', 'mist', 'tide',
   'aurora', 'earthquake', 'volcano', 'glacier', 'avalanche', 'blizzard', 'tornado', 'hurricane',
@@ -355,7 +355,9 @@ const DICTIONARY_WORDS = [
   'horses', 'hungry', 'informed', 'innocent',
 ];
 
-const WORDS = Array.from(new Set([...CORE_WORDS, ...DICTIONARY_WORDS]));
+// Curated and dictionary lists intentionally overlap in a few places, so we
+// dedupe once at startup before puzzle selection.
+const WORDS = Array.from(new Set([...CURATED_WORDS, ...DICTIONARY_WORDS]));
 
 // ─────────────────────────────────────────────────────────
 // Seeded PRNG (splitmix32)
@@ -371,6 +373,7 @@ function seededRng(seed) {
 }
 
 function seedFromGameId(gameId) {
+  // 32-bit FNV-1a hash for stable, deterministic seed derivation from IDs.
   const source = String(gameId || '').toLowerCase();
   let hash = 2166136261;
   for (let i = 0; i < source.length; i++) {

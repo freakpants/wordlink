@@ -18,6 +18,11 @@ const CONFIG = {
   simAlphaLoading: 0.25,
   simAlphaError: 0.2,
   simAlphaScale: 0.7,
+  closenessNeighborhoodSaturation: 0.35,
+  closenessDirectWeight: 0.55,
+  closenessNeighborhoodWeight: 0.35,
+  closenessEdgeWeight: 0.10,
+  closenessPerfectThreshold: 0.999,
   shareUrl: 'https://freakpants.github.io/wordlink/',
 };
 
@@ -108,15 +113,20 @@ function getSimilarityDisplayPercent(sourceWord, targetWord, sim) {
   if (dbg) {
     // Display score is intentionally decoupled from edge thresholds so it reads
     // as a clearer 0-100 value instead of saturating too easily.
-    // 0.35 means ~35% neighbour-overlap maps to a full neighborhood signal.
-    const neighborhood = Math.min(1, dbg.rawJaccard / 0.35);
+    // ~35% neighbour-overlap maps to a full neighborhood signal.
+    const neighborhood = Math.min(1, dbg.rawJaccard / CONFIG.closenessNeighborhoodSaturation);
     // We bias the display toward direct synonym strength (55%), keep
     // neighborhood overlap as a strong secondary signal (35%), and retain a
     // small contribution from the gameplay edge score (10%) for continuity.
-    base = Math.min(1, dbg.directNorm * 0.55 + neighborhood * 0.35 + sim * 0.10);
+    base = Math.min(
+      1,
+      dbg.directNorm * CONFIG.closenessDirectWeight +
+      neighborhood * CONFIG.closenessNeighborhoodWeight +
+      sim * CONFIG.closenessEdgeWeight
+    );
   }
   const percent = Math.round(Math.max(0, Math.min(1, base)) * 100);
-  return percent >= 100 && base < 0.999 ? 99 : percent;
+  return percent >= 100 && base < CONFIG.closenessPerfectThreshold ? 99 : percent;
 }
 
 function setStatus(msg, cls) {
