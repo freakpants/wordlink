@@ -517,7 +517,6 @@ function checkVictory() {
   shareBtn.dataset.shareText = shareText;
 
   saveProgress(true);
-  setStatus('You won! Path complete.', 'success');
 
   // Show modal after a short pause so the path highlight is visible
   setTimeout(() => {
