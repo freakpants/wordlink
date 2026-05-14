@@ -16,13 +16,13 @@ A daily semantic word-path puzzle game, inspired by Linxicon.
 Bridge words can be **dragged** to reposition them and form new connections.  
 Double-click a bridge word to remove it.
 Click any word bubble to inspect a clearer **0-100% closeness scale** and see ranked scores for every other word beneath the board.
-Use **Practice** mode for a fresh random puzzle at any time.
+Use **Practice** mode to replay a numbered puzzle from past daily games.
 
 ## Technical Details
 
 - Pure HTML / CSS / JavaScript – no build step, no frameworks.
 - Word similarity is powered by the [Datamuse API](https://www.datamuse.com/api/) (`?ml=` endpoint).
 - Deployed automatically to **GitHub Pages** via the included Actions workflow.
-- Daily puzzle pairs are selected deterministically by day-of-year from a curated list of 60 word pairs.
+- Daily puzzle pairs are selected deterministically by date from a curated + dictionary-backed pool, with optional Datamuse library augmentation.
 - Daily progress and best scores are persisted in `localStorage`.
-- Practice mode generates a new random pair on demand.
+- Practice mode picks a numbered puzzle from previous daily puzzle numbers.

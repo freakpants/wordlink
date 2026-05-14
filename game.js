@@ -23,6 +23,9 @@ const CONFIG = {
   closenessNeighborhoodWeight: 0.35,
   closenessEdgeWeight: 0.10,
   closenessPerfectThreshold: 0.999,
+  closenessCurveStrength: 2.2,
+  closenessDisplayMin: 5,
+  closenessDisplayMax: 95,
   shareUrl: 'https://freakpants.github.io/wordlink/',
 };
 
@@ -68,20 +71,16 @@ function todayKey() {
 }
 
 function getProgressStorageKey() {
-  return state.puzzle.mode === 'daily'
-    ? `wordlink-progress-${state.puzzle.key}`
-    : null;
+  return state.puzzle.key ? `wordlink-progress-${state.puzzle.key}` : null;
 }
 
 function getBestStorageKey() {
-  return state.puzzle.mode === 'daily'
-    ? `wordlink-best-${state.puzzle.key}`
-    : null;
+  return state.puzzle.key ? `wordlink-best-${state.puzzle.key}` : null;
 }
 
 function getPuzzleLabel(mode = state.puzzle.mode) {
   if (mode === 'daily') return `#${getPuzzleNumber()}`;
-  return state.puzzle.gameId ? `Practice - ${state.puzzle.gameId}` : 'Practice';
+  return state.puzzle.gameId ? `#${state.puzzle.gameId}` : 'Practice';
 }
 
 function getPracticeGameIdFromUrl() {
@@ -125,10 +124,15 @@ function getSimilarityDisplayPercent(sourceWord, targetWord, sim) {
       sim * CONFIG.closenessEdgeWeight
     );
   }
-  const percent = Math.round(Math.max(0, Math.min(1, base)) * 100);
-  // Keep 100% exclusive to effectively-perfect matches so near-perfect values
-  // remain visually distinct from true perfect closeness.
-  return percent >= 100 && base < CONFIG.closenessPerfectThreshold ? 99 : percent;
+  const normalized = Math.max(0, Math.min(1, base));
+  if (normalized >= CONFIG.closenessPerfectThreshold) return 100;
+  if (normalized <= 0.001) return 0;
+
+  const curved = (Math.tanh((normalized - 0.5) * CONFIG.closenessCurveStrength) + 1) / 2;
+  return Math.round(
+    CONFIG.closenessDisplayMin +
+    curved * (CONFIG.closenessDisplayMax - CONFIG.closenessDisplayMin)
+  );
 }
 
 function setStatus(msg, cls) {
@@ -510,6 +514,7 @@ function checkVictory() {
   shareBtn.dataset.shareText = shareText;
 
   saveProgress(true);
+  setStatus('You won! Path complete.', 'success');
 
   // Show modal after a short pause so the path highlight is visible
   setTimeout(() => {
@@ -899,7 +904,7 @@ function clearBoard() {
 function startPuzzle(mode, { force = false, gameId = null } = {}) {
   const hasBridges = state.nodes.some(n => n.type === 'bridge');
   if (!force && hasBridges) {
-    const nextLabel = mode === 'daily' ? 'today’s daily puzzle' : 'a new practice puzzle';
+    const nextLabel = mode === 'daily' ? 'today’s daily puzzle' : 'a past daily puzzle';
     if (!confirm(`Start ${nextLabel}? Your current board will be cleared.`)) return;
   }
 
@@ -910,7 +915,7 @@ function startPuzzle(mode, { force = false, gameId = null } = {}) {
 
   state.puzzle = {
     mode,
-    key: mode === 'daily' ? todayKey() : `practice-${practiceGameId}`,
+    key: mode === 'daily' ? todayKey() : `practice-day-${practiceGameId}`,
     gameId: practiceGameId,
   };
 
@@ -928,14 +933,12 @@ function startPuzzle(mode, { force = false, gameId = null } = {}) {
   fetchRelated(endWord).catch(() => {});
 
   updateBestScore();
-  if (mode === 'daily') {
-    loadProgress();
-  }
+  loadProgress();
   wordInput.focus();
 }
 
 function startNewPracticePuzzle() {
-  if (!confirm('Start a new random practice puzzle?')) return;
+  if (!confirm('Start another practice puzzle from a past daily?')) return;
   startPuzzle('practice', { force: true });
 }
 
@@ -1039,11 +1042,21 @@ function init() {
     document.getElementById('help-modal').classList.add('hidden');
   });
 
-  const practiceGameId = getPracticeGameIdFromUrl();
-  if (practiceGameId) {
-    startPuzzle('practice', { force: true, gameId: practiceGameId });
+  const startInitialPuzzle = () => {
+    const practiceGameId = getPracticeGameIdFromUrl();
+    if (practiceGameId) {
+      startPuzzle('practice', { force: true, gameId: practiceGameId });
+    } else {
+      startPuzzle('daily', { force: true });
+    }
+  };
+
+  if (typeof loadLibraryWords === 'function') {
+    loadLibraryWords()
+      .catch(() => {})
+      .finally(startInitialPuzzle);
   } else {
-    startPuzzle('daily', { force: true });
+    startInitialPuzzle();
   }
 }
 

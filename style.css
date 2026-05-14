@@ -162,7 +162,6 @@ header h1 span {
   font-weight: 700;
   font-size: 1rem;
   letter-spacing: 0.5px;
-  text-transform: uppercase;
   user-select: none;
 }
 
@@ -261,7 +260,6 @@ header h1 span {
   border-color: var(--blue-light);
   box-shadow: var(--shadow-bubble), 0 0 14px var(--blue-glow);
   color: #fff;
-  text-transform: uppercase;
   font-size: 0.95rem;
   cursor: default;
 }
@@ -272,7 +270,6 @@ header h1 span {
   border-color: var(--red-light);
   box-shadow: var(--shadow-bubble), 0 0 14px var(--red-glow);
   color: #fff;
-  text-transform: uppercase;
   font-size: 0.95rem;
   cursor: default;
 }
@@ -444,12 +441,10 @@ header h1 span {
 
 .similarity-word.start {
   color: var(--blue-light);
-  text-transform: uppercase;
 }
 
 .similarity-word.end {
   color: var(--red-light);
-  text-transform: uppercase;
 }
 
 .similarity-score {
@@ -600,7 +595,6 @@ header h1 span {
   border-radius: var(--radius-bubble);
   font-size: 0.85rem;
   font-weight: 600;
-  text-transform: uppercase;
 }
 .path-word.start { background: var(--blue-dark); border: 1px solid var(--blue-light); color: #fff; }
 .path-word.end   { background: var(--red-dark);  border: 1px solid var(--red-light);  color: #fff; }
