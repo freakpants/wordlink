@@ -466,6 +466,37 @@ function getPracticePair(gameId) {
   return getDailyPairForPuzzleNumber(puzzleNumber);
 }
 
+function getPairCandidatesForSeed(seed, count = 12) {
+  const rng = seededRng(seed);
+  const seen = new Set();
+  const pairs = [];
+  let attempts = 0;
+  while (pairs.length < count && attempts < count * 20) {
+    const pair = getRandomPair(rng);
+    const key = [...pair].sort().join('\x00');
+    if (!seen.has(key)) {
+      seen.add(key);
+      pairs.push(pair);
+    }
+    attempts++;
+  }
+  return pairs;
+}
+
+function getDailyPairCandidatesForDate(date, count = 12) {
+  const seed = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
+  return getPairCandidatesForSeed(seed, count);
+}
+
+function getDailyPairCandidatesForPuzzleNumber(puzzleNumber, count = 12) {
+  return getDailyPairCandidatesForDate(getDateFromPuzzleNumber(puzzleNumber), count);
+}
+
+function getPracticePairCandidates(gameId, count = 12) {
+  const puzzleNumber = normalizePracticeGameId(gameId) || createPracticeGameId();
+  return getDailyPairCandidatesForPuzzleNumber(puzzleNumber, count);
+}
+
 function getRandomPair(rng = Math.random) {
   const words = getWordPool();
   const idx1 = Math.floor(rng() * words.length);
