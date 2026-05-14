@@ -18,14 +18,6 @@ const CONFIG = {
   simAlphaLoading: 0.25,
   simAlphaError: 0.2,
   simAlphaScale: 0.7,
-  // Human-readable closeness display: blend the game score with direct
-  // Datamuse overlap and neighbour overlap so 100% is exceptionally rare.
-  closenessScoreWeight: 0.45,
-  closenessDirectWeight: 0.45,
-  closenessNeighborhoodWeight: 0.10,
-  closenessCurvePower: 1.35,
-  closenessPerfectDirectThreshold: 0.98,
-  closenessPerfectJaccardThreshold: 0.45,
   shareUrl: 'https://freakpants.github.io/wordlink/',
 };
 
@@ -38,7 +30,7 @@ let state = {
   won:       false,
   dragInfo:  null,   // { node, offsetX, offsetY }
   placement: null,   // { x, y } – where next word will be placed
-  puzzle:    { mode: 'daily', key: todayKey() },
+  puzzle:    { mode: 'daily', key: todayKey(), gameId: null },
   similarityView: { sourceId: null, scores: {}, token: 0 },
   suppressBubbleClickUntil: 0,
 };
@@ -83,7 +75,30 @@ function getBestStorageKey() {
 }
 
 function getPuzzleLabel(mode = state.puzzle.mode) {
-  return mode === 'daily' ? `#${getPuzzleNumber()}` : 'Practice';
+  if (mode === 'daily') return `#${getPuzzleNumber()}`;
+  return state.puzzle.gameId ? `Practice · ${state.puzzle.gameId}` : 'Practice';
+}
+
+function getPracticeGameIdFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return normalisePracticeGameId(params.get('gid'));
+}
+
+function syncPuzzleUrl() {
+  const url = new URL(window.location.href);
+  if (state.puzzle.mode === 'practice' && state.puzzle.gameId) {
+    url.searchParams.set('gid', state.puzzle.gameId);
+  } else {
+    url.searchParams.delete('gid');
+  }
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+function getPuzzleShareUrl() {
+  if (state.puzzle.mode === 'practice' && state.puzzle.gameId) {
+    return `${CONFIG.shareUrl}?gid=${encodeURIComponent(state.puzzle.gameId)}`;
+  }
+  return CONFIG.shareUrl;
 }
 
 function getSimilarityDisplayPercent(sourceWord, targetWord, sim) {
@@ -91,23 +106,13 @@ function getSimilarityDisplayPercent(sourceWord, targetWord, sim) {
   const dbg = simDebugCache[simCacheKey(sourceWord, targetWord)];
   let base = sim;
   if (dbg) {
-    const neighborhood = Math.sqrt(Math.max(0, dbg.rawJaccard));
-    base = Math.min(
-      1,
-      sim * CONFIG.closenessScoreWeight +
-      dbg.directNorm * CONFIG.closenessDirectWeight +
-      neighborhood * CONFIG.closenessNeighborhoodWeight
-    );
+    // Display score is intentionally decoupled from edge thresholds so it reads
+    // as a clearer 0-100 value instead of saturating too easily.
+    const neighborhood = Math.min(1, dbg.rawJaccard / 0.35);
+    base = Math.min(1, dbg.directNorm * 0.55 + neighborhood * 0.35 + sim * 0.10);
   }
-  const curved = 1 - Math.pow(1 - base, CONFIG.closenessCurvePower);
-  if (
-    dbg &&
-    dbg.directNorm > CONFIG.closenessPerfectDirectThreshold &&
-    dbg.rawJaccard > CONFIG.closenessPerfectJaccardThreshold
-  ) {
-    return 100;
-  }
-  return Math.min(99, Math.max(0, Math.round(curved * 100)));
+  const percent = Math.round(Math.max(0, Math.min(1, base)) * 100);
+  return percent >= 100 && base < 0.999 ? 99 : percent;
 }
 
 function setStatus(msg, cls) {
@@ -324,7 +329,7 @@ function renderSimilarityPanel(source) {
 
   document.getElementById('similarity-panel-title').textContent = `Closeness to "${source.word}"`;
   document.getElementById('similarity-panel-subtitle').textContent =
-    'Sorted from closest to furthest. 100% should be exceptionally rare.';
+    'Sorted from closest to furthest on a normalized 0-100 closeness scale.';
 
   const entries = state.nodes
     .filter(n => n.id !== source.id)
@@ -485,7 +490,7 @@ function checkVictory() {
   const puzzleNum = document.getElementById('puzzle-number').textContent;
   const chain = path.map(n => n.word).join(' → ');
   const shareText =
-    `WordLink ${puzzleNum} 🔗\n${chain}\nCompleted in ${bridgeCount} bridge word${bridgeCount !== 1 ? 's' : ''}!\n${CONFIG.shareUrl}`;
+    `WordLink ${puzzleNum} 🔗\n${chain}\nCompleted in ${bridgeCount} bridge word${bridgeCount !== 1 ? 's' : ''}!\n${getPuzzleShareUrl()}`;
   shareBtn.dataset.shareText = shareText;
 
   saveProgress(true);
@@ -875,7 +880,7 @@ function clearBoard() {
   setStatus('');
 }
 
-function startPuzzle(mode, { force = false } = {}) {
+function startPuzzle(mode, { force = false, gameId = null } = {}) {
   const hasBridges = state.nodes.some(n => n.type === 'bridge');
   if (!force && hasBridges) {
     const nextLabel = mode === 'daily' ? 'today’s daily puzzle' : 'a new practice puzzle';
@@ -883,17 +888,22 @@ function startPuzzle(mode, { force = false } = {}) {
   }
 
   clearBoard();
+  const practiceGameId = mode === 'practice'
+    ? (normalisePracticeGameId(gameId) || createPracticeGameId())
+    : null;
 
   state.puzzle = {
     mode,
-    key: mode === 'daily' ? todayKey() : `practice-${Date.now()}`,
+    key: mode === 'daily' ? todayKey() : `practice-${practiceGameId}`,
+    gameId: practiceGameId,
   };
 
-  const [startWord, endWord] = mode === 'daily' ? getDailyPair() : getRandomPair();
+  const [startWord, endWord] = mode === 'daily' ? getDailyPair() : getPracticePair(practiceGameId);
   document.getElementById('word-start').textContent = startWord;
   document.getElementById('word-end').textContent = endWord;
   document.getElementById('puzzle-number').textContent = getPuzzleLabel(mode);
   setPuzzleModeButtons();
+  syncPuzzleUrl();
 
   createNode(startWord, CONFIG.startX, CONFIG.startY, 'start');
   createNode(endWord, CONFIG.endX, CONFIG.endY, 'end');
@@ -1013,7 +1023,12 @@ function init() {
     document.getElementById('help-modal').classList.add('hidden');
   });
 
-  startPuzzle('daily', { force: true });
+  const practiceGameId = getPracticeGameIdFromUrl();
+  if (practiceGameId) {
+    startPuzzle('practice', { force: true, gameId: practiceGameId });
+  } else {
+    startPuzzle('daily', { force: true });
+  }
 }
 
 // Start once DOM is ready
