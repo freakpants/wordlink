@@ -572,7 +572,8 @@ async function refreshSimilarityView() {
       try {
         const sim = await getSimilarity(source.word, n.word);
         return { id: n.id, sim };
-      } catch (_) {
+      } catch (err) {
+        console.warn(`Similarity check failed for "${source.word}" and "${n.word}".`, err);
         return { id: n.id, sim: null };
       }
     })
