@@ -601,7 +601,7 @@ function renderSimilarityView() {
 
     const badge = document.createElement('div');
     badge.className = 'sim-badge';
-    badge.textContent = sim === null ? 'err' : (sim === undefined ? '…' : `${Math.round(sim * 100)}%`);
+    badge.textContent = sim === null ? 'N/A' : (sim === undefined ? '…' : `${Math.round(sim * 100)}%`);
     badge.style.left = `${n.x}px`;
     badge.style.top = `${Math.min(CONFIG.canvasH - CONFIG.simBadgeBottomMargin, n.y + CONFIG.simBadgeOffsetY)}px`;
     similarityOverlayEl.appendChild(badge);

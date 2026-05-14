@@ -187,12 +187,7 @@ header h1 span {
 }
 
 /* ── Bubbles container ────────────────────────────────── */
-#bubbles-container {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
+#bubbles-container,
 #similarity-overlay {
   position: absolute;
   inset: 0;
