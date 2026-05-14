@@ -9,7 +9,7 @@ A daily semantic word-path puzzle game, inspired by Linxicon.
 1. Each day you get two **anchor words** placed at opposite ends of the canvas.
 2. **Type** a bridge word and press **Enter** (or click **Add**). WordLink auto-places new bubbles and nudges nearby ones apart.
 3. Two words **connect** when they are semantically similar enough (checked via the [Datamuse API](https://www.datamuse.com/api/)).
-4. Gray links appear at **10.00%+** similarity, and the winning chain needs **16.00%+** links.
+4. Links appear only at **16.00%+** similarity.
 5. Build a chain of connected words from the blue word to the red word.
 6. Your score = number of bridge words used. **Fewer is better!**
 
