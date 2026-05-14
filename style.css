@@ -109,14 +109,23 @@ header h1 span {
 }
 
 .version-tag {
-  font-size: 0.7rem;
-  color: var(--border);
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid var(--gray-border);
+  border-radius: 999px;
+  background: rgba(96,165,250,0.08);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--blue-light);
   font-family: monospace;
+  line-height: 1;
   user-select: none;
 }
 
 .version-tag:not([data-version*="__COMMIT_SHA__"]):empty::before {
-  content: attr(data-version);
+  content: "Version " attr(data-version);
 }
 
 .icon-btn {
