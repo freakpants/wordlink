@@ -1,0 +1,632 @@
+// game.js – WordLink game logic
+
+// ─────────────────────────────────────────────────────────
+// Configuration
+// ─────────────────────────────────────────────────────────
+const CONFIG = {
+  canvasW: 820,
+  canvasH: 420,
+  startX: 100, startY: 210,
+  endX:   720, endY:   210,
+  connectionRadius: 190,   // px – max distance for a link to form
+  minSimilarity:    0.10,  // normalized [0,1] – weakest visible link
+  pathSimilarity:   0.16,  // normalized – required to count as path edge
+  maxBridgeWords:   25,
+  shareUrl: 'https://freakpants.github.io/wordlink/',
+};
+
+// ─────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────
+let state = {
+  nodes:     [],     // { id, word, x, y, type:'start'|'end'|'bridge', el }
+  edges:     [],     // { from, to, similarity }
+  won:       false,
+  dragInfo:  null,   // { node, offsetX, offsetY }
+  placement: null,   // { x, y } – where next word will be placed
+};
+
+// Similarity cache: "word1:word2" → score 0‒1
+const simCache = {};
+// Related-words cache: word → [{word, score}]
+const relCache = {};
+
+// ─────────────────────────────────────────────────────────
+// DOM refs
+// ─────────────────────────────────────────────────────────
+let svg, bubblesEl, placementEl, wordInput, statusEl;
+
+// ─────────────────────────────────────────────────────────
+// Utility helpers
+// ─────────────────────────────────────────────────────────
+function dist(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function simCacheKey(w1, w2) {
+  return [w1.toLowerCase(), w2.toLowerCase()].sort().join('\x00');
+}
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function setStatus(msg, cls) {
+  statusEl.textContent = msg;
+  statusEl.className = cls || '';
+}
+
+function shakeInput() {
+  wordInput.classList.remove('shake');
+  void wordInput.offsetWidth; // force reflow
+  wordInput.classList.add('shake');
+  wordInput.addEventListener('animationend', () => wordInput.classList.remove('shake'), { once: true });
+}
+
+// ─────────────────────────────────────────────────────────
+// Datamuse API
+// ─────────────────────────────────────────────────────────
+async function fetchRelated(word) {
+  const key = word.toLowerCase();
+  if (relCache[key]) return relCache[key];
+  const url = `https://api.datamuse.com/words?ml=${encodeURIComponent(key)}&max=300`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Datamuse fetch failed');
+  const data = await res.json();
+  relCache[key] = data;
+  return data;
+}
+
+async function getSimilarity(w1, w2) {
+  const key = simCacheKey(w1, w2);
+  if (simCache[key] !== undefined) return simCache[key];
+
+  const [rel1, rel2] = await Promise.all([
+    fetchRelated(w1),
+    fetchRelated(w2),
+  ]);
+
+  const lo1 = w2.toLowerCase();
+  const lo2 = w1.toLowerCase();
+  const m1 = rel1.find(r => r.word.toLowerCase() === lo1);
+  const m2 = rel2.find(r => r.word.toLowerCase() === lo2);
+
+  const s1 = m1 ? m1.score : 0;
+  const s2 = m2 ? m2.score : 0;
+  const best = Math.max(s1, s2);
+
+  // Datamuse scores go up to ~3500 for near-synonyms; normalize to [0,1]
+  const norm = Math.min(1, best / 2000);
+  simCache[key] = norm;
+  return norm;
+}
+
+// ─────────────────────────────────────────────────────────
+// Node (bubble) management
+// ─────────────────────────────────────────────────────────
+function createNode(word, x, y, type) {
+  const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const el = document.createElement('div');
+  el.className = `word-bubble ${type}`;
+  el.textContent = word;
+  el.style.left = `${x}px`;
+  el.style.top  = `${y}px`;
+  el.dataset.id = id;
+
+  if (type === 'bridge') {
+    el.addEventListener('mousedown',  e => onBubbleMouseDown(e, id));
+    el.addEventListener('touchstart', e => onBubbleTouchStart(e, id), { passive: false });
+    el.addEventListener('dblclick', () => removeNode(id));
+  }
+
+  bubblesEl.appendChild(el);
+
+  const node = { id, word, x, y, type, el };
+  state.nodes.push(node);
+  return node;
+}
+
+function removeNode(id) {
+  if (state.won) return;
+  const idx = state.nodes.findIndex(n => n.id === id);
+  if (idx === -1) return;
+  const node = state.nodes[idx];
+  if (node.type !== 'bridge') return;
+  node.el.remove();
+  state.nodes.splice(idx, 1);
+  updateWordCount();
+  rebuildEdges();
+}
+
+function updateNodePosition(id, x, y) {
+  const node = state.nodes.find(n => n.id === id);
+  if (!node) return;
+  node.x = Math.max(30,  Math.min(CONFIG.canvasW - 30, x));
+  node.y = Math.max(20,  Math.min(CONFIG.canvasH - 20, y));
+  node.el.style.left = `${node.x}px`;
+  node.el.style.top  = `${node.y}px`;
+}
+
+// ─────────────────────────────────────────────────────────
+// Edge / connection management
+// ─────────────────────────────────────────────────────────
+function rebuildEdges() {
+  state.edges = [];
+  svg.innerHTML = '';
+
+  for (let i = 0; i < state.nodes.length; i++) {
+    for (let j = i + 1; j < state.nodes.length; j++) {
+      const a = state.nodes[i];
+      const b = state.nodes[j];
+      if (dist(a, b) > CONFIG.connectionRadius) continue;
+      const key = simCacheKey(a.word, b.word);
+      const sim = simCache[key];
+      if (sim !== undefined && sim >= CONFIG.minSimilarity) {
+        state.edges.push({ from: a, to: b, similarity: sim });
+      }
+    }
+  }
+
+  renderAllEdges();
+  updateNodeConnectedState();
+  checkVictory();
+}
+
+function renderAllEdges() {
+  svg.innerHTML = '';
+  // Render normal edges first, path edges on top (painted later)
+  state.edges.forEach(e => drawEdge(e, false));
+}
+
+function drawEdge(edge, onPath) {
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  line.setAttribute('x1', edge.from.x);
+  line.setAttribute('y1', edge.from.y);
+  line.setAttribute('x2', edge.to.x);
+  line.setAttribute('y2', edge.to.y);
+  line.classList.add('conn-line');
+  if (onPath) {
+    line.classList.add('on-path');
+  } else {
+    const opacity = Math.min(0.85, 0.3 + edge.similarity * 1.5);
+    const width   = Math.min(4, 1 + edge.similarity * 5);
+    line.setAttribute('stroke', '#94a3b8');
+    line.setAttribute('stroke-opacity', opacity.toFixed(2));
+    line.setAttribute('stroke-width',   width.toFixed(1));
+    line.setAttribute('stroke-linecap', 'round');
+  }
+  svg.appendChild(line);
+  edge.lineEl = line;
+  return line;
+}
+
+function updateNodeConnectedState() {
+  // Mark nodes that have at least one path-strength edge
+  const connected = new Set();
+  state.edges.forEach(e => {
+    if (e.similarity >= CONFIG.pathSimilarity) {
+      connected.add(e.from.id);
+      connected.add(e.to.id);
+    }
+  });
+  state.nodes.forEach(n => {
+    if (n.type === 'bridge') {
+      n.el.classList.toggle('connected', connected.has(n.id));
+    }
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// Path detection (BFS)
+// ─────────────────────────────────────────────────────────
+function findPath() {
+  const startNode = state.nodes.find(n => n.type === 'start');
+  const endNode   = state.nodes.find(n => n.type === 'end');
+  if (!startNode || !endNode) return null;
+
+  // Build adjacency map using only path-strength edges
+  const adj = {};
+  state.nodes.forEach(n => { adj[n.id] = []; });
+  state.edges.forEach(e => {
+    if (e.similarity >= CONFIG.pathSimilarity) {
+      adj[e.from.id].push(e.to);
+      adj[e.to.id].push(e.from);
+    }
+  });
+
+  // BFS
+  const queue   = [[startNode, [startNode]]];
+  const visited = new Set([startNode.id]);
+
+  while (queue.length) {
+    const [cur, path] = queue.shift();
+    if (cur.id === endNode.id) return path;
+    for (const neighbour of adj[cur.id]) {
+      if (!visited.has(neighbour.id)) {
+        visited.add(neighbour.id);
+        queue.push([neighbour, [...path, neighbour]]);
+      }
+    }
+  }
+  return null;
+}
+
+function checkVictory() {
+  if (state.won) return;
+  const path = findPath();
+  if (!path) return;
+
+  state.won = true;
+  const bridgeCount = path.filter(n => n.type === 'bridge').length;
+
+  // Highlight path nodes and edges
+  const pathIds = new Set(path.map(n => n.id));
+  path.forEach(n => n.el.classList.add('on-path'));
+
+  // Re-render edges: path edges on top in amber, others remain gray
+  svg.innerHTML = '';
+  state.edges.forEach(e => {
+    const onPath = pathIds.has(e.from.id) && pathIds.has(e.to.id)
+                   && e.similarity >= CONFIG.pathSimilarity;
+    drawEdge(e, onPath);
+  });
+
+  // Save best score
+  const bestKey = `wordlink-best-${todayKey()}`;
+  const saved   = parseInt(localStorage.getItem(bestKey), 10);
+  if (isNaN(saved) || bridgeCount < saved) {
+    localStorage.setItem(bestKey, bridgeCount);
+  }
+  updateBestScore();
+
+  // Build path display in modal
+  const pathDisplay = document.getElementById('path-display');
+  pathDisplay.innerHTML = '';
+  path.forEach((n, i) => {
+    if (i > 0) {
+      const arr = document.createElement('span');
+      arr.className = 'path-arrow';
+      arr.textContent = '→';
+      pathDisplay.appendChild(arr);
+    }
+    const chip = document.createElement('div');
+    chip.className = `path-word ${n.type}`;
+    chip.textContent = n.word;
+    pathDisplay.appendChild(chip);
+  });
+
+  document.getElementById('final-score').textContent = bridgeCount;
+
+  // Build share text and store on button
+  const shareBtn = document.getElementById('copy-result-btn');
+  const puzzleNum = document.getElementById('puzzle-number').textContent;
+  const chain = path.map(n => n.word).join(' → ');
+  const shareText =
+    `WordLink ${puzzleNum} 🔗\n${chain}\nCompleted in ${bridgeCount} bridge word${bridgeCount !== 1 ? 's' : ''}!\n${CONFIG.shareUrl}`;
+  shareBtn.dataset.shareText = shareText;
+
+  saveProgress(true);
+
+  // Show modal after a short pause so the path highlight is visible
+  setTimeout(() => {
+    document.getElementById('victory-modal').classList.remove('hidden');
+  }, 800);
+}
+
+// ─────────────────────────────────────────────────────────
+// Adding a word
+// ─────────────────────────────────────────────────────────
+async function addWord() {
+  if (state.won) return;
+
+  const raw  = wordInput.value.trim().toLowerCase();
+  const word = raw.replace(/[^a-z'-]/g, '');
+
+  if (!word) {
+    setStatus('Please enter a word.', 'error');
+    shakeInput();
+    return;
+  }
+  if (!/^[a-z'-]+$/.test(word)) {
+    setStatus('Only letters are allowed.', 'error');
+    shakeInput();
+    return;
+  }
+  if (state.nodes.find(n => n.word.toLowerCase() === word)) {
+    setStatus(`"${word}" is already on the board.`, 'error');
+    shakeInput();
+    return;
+  }
+  if (state.nodes.filter(n => n.type === 'bridge').length >= CONFIG.maxBridgeWords) {
+    setStatus(`Maximum of ${CONFIG.maxBridgeWords} bridge words reached.`, 'error');
+    return;
+  }
+
+  wordInput.value = '';
+  setStatus('');
+
+  // Determine placement coordinates
+  const px = state.placement ? state.placement.x : CONFIG.canvasW / 2 + (Math.random() - 0.5) * 80;
+  const py = state.placement ? state.placement.y : CONFIG.canvasH / 2 + (Math.random() - 0.5) * 80;
+  clearPlacement();
+
+  const node = createNode(word, px, py, 'bridge');
+  node.el.classList.add('loading');
+  setStatus(`Checking "${word}"…`);
+  updateWordCount();
+
+  try {
+    // Fetch related words for this new word
+    await fetchRelated(word);
+
+    // Check similarity with every existing node
+    const others = state.nodes.filter(n => n.id !== node.id);
+    await Promise.all(others.map(other => getSimilarity(word, other.word)));
+
+    node.el.classList.remove('loading');
+    setStatus('');
+  } catch (err) {
+    node.el.classList.remove('loading');
+    node.el.classList.add('error');
+    setStatus(`Could not check "${word}". Drag it close to another word – connections will update.`, 'error');
+  }
+
+  rebuildEdges();
+  saveProgress(false);
+  wordInput.focus();
+}
+
+// ─────────────────────────────────────────────────────────
+// Drag & Drop (mouse)
+// ─────────────────────────────────────────────────────────
+function onBubbleMouseDown(e, id) {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  startDrag(e.clientX, e.clientY, id);
+}
+
+function startDrag(clientX, clientY, id) {
+  const canvasRect = document.getElementById('game-canvas').getBoundingClientRect();
+  const node = state.nodes.find(n => n.id === id);
+  if (!node || node.type !== 'bridge') return;
+  state.dragInfo = {
+    id,
+    offsetX: clientX - canvasRect.left - node.x,
+    offsetY: clientY - canvasRect.top  - node.y,
+  };
+}
+
+function onDocMouseMove(e) {
+  if (!state.dragInfo) return;
+  const canvasRect = document.getElementById('game-canvas').getBoundingClientRect();
+  const x = e.clientX - canvasRect.left - state.dragInfo.offsetX;
+  const y = e.clientY - canvasRect.top  - state.dragInfo.offsetY;
+  updateNodePosition(state.dragInfo.id, x, y);
+  rebuildEdges();
+}
+
+function onDocMouseUp() {
+  if (!state.dragInfo) return;
+  state.dragInfo = null;
+  saveProgress(false);
+}
+
+// ─────────────────────────────────────────────────────────
+// Drag & Drop (touch)
+// ─────────────────────────────────────────────────────────
+function onBubbleTouchStart(e, id) {
+  if (e.touches.length !== 1) return;
+  e.preventDefault();
+  e.stopPropagation();
+  startDrag(e.touches[0].clientX, e.touches[0].clientY, id);
+}
+
+function onDocTouchMove(e) {
+  if (!state.dragInfo || e.touches.length !== 1) return;
+  e.preventDefault();
+  const canvasRect = document.getElementById('game-canvas').getBoundingClientRect();
+  const x = e.touches[0].clientX - canvasRect.left - state.dragInfo.offsetX;
+  const y = e.touches[0].clientY - canvasRect.top  - state.dragInfo.offsetY;
+  updateNodePosition(state.dragInfo.id, x, y);
+  rebuildEdges();
+}
+
+function onDocTouchEnd() {
+  if (!state.dragInfo) return;
+  state.dragInfo = null;
+  saveProgress(false);
+}
+
+// ─────────────────────────────────────────────────────────
+// Canvas click → set placement indicator
+// ─────────────────────────────────────────────────────────
+function onCanvasClick(e) {
+  if (state.won) return;
+  // Ignore if clicking on a bubble
+  if (e.target.classList.contains('word-bubble')) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  state.placement = { x, y };
+  placementEl.style.left  = `${x}px`;
+  placementEl.style.top   = `${y}px`;
+  placementEl.classList.remove('hidden');
+  wordInput.focus();
+  setStatus('Placement set – now type a word and press Enter.');
+}
+
+function clearPlacement() {
+  state.placement = null;
+  placementEl.classList.add('hidden');
+}
+
+// ─────────────────────────────────────────────────────────
+// UI helpers
+// ─────────────────────────────────────────────────────────
+function updateWordCount() {
+  const n = state.nodes.filter(n => n.type === 'bridge').length;
+  document.getElementById('word-count').textContent = n;
+}
+
+function updateBestScore() {
+  const saved = parseInt(localStorage.getItem(`wordlink-best-${todayKey()}`), 10);
+  document.getElementById('best-score').textContent = isNaN(saved) ? '–' : saved;
+}
+
+// ─────────────────────────────────────────────────────────
+// Local-storage persistence
+// ─────────────────────────────────────────────────────────
+function saveProgress(won) {
+  const bridges = state.nodes
+    .filter(n => n.type === 'bridge')
+    .map(n => ({ word: n.word, x: n.x, y: n.y }));
+  const data = { bridges, won };
+  localStorage.setItem(`wordlink-progress-${todayKey()}`, JSON.stringify(data));
+}
+
+function loadProgress() {
+  const raw = localStorage.getItem(`wordlink-progress-${todayKey()}`);
+  if (!raw) return;
+  try {
+    const data = JSON.parse(raw);
+    if (data.bridges && Array.isArray(data.bridges)) {
+      data.bridges.forEach(b => createNode(b.word, b.x, b.y, 'bridge'));
+      updateWordCount();
+      // Re-check similarities for restored words (fire-and-forget)
+      restoreSimilarities(data.bridges.map(b => b.word));
+    }
+  } catch (_) { /* ignore corrupt data */ }
+}
+
+async function restoreSimilarities(words) {
+  const allWords = state.nodes.map(n => n.word);
+  const pairs = [];
+  for (let i = 0; i < allWords.length; i++) {
+    for (let j = i + 1; j < allWords.length; j++) {
+      const key = simCacheKey(allWords[i], allWords[j]);
+      if (simCache[key] === undefined) {
+        pairs.push([allWords[i], allWords[j]]);
+      }
+    }
+  }
+  // Fetch related words for each bridge word, then rebuild edges
+  try {
+    await Promise.all(words.map(w => fetchRelated(w)));
+    await Promise.all(pairs.map(([a, b]) => getSimilarity(a, b)));
+  } catch (_) { /* best-effort */ }
+  rebuildEdges();
+}
+
+// ─────────────────────────────────────────────────────────
+// Reset / Undo
+// ─────────────────────────────────────────────────────────
+function resetGame() {
+  if (!confirm('Reset the board? Your progress will be lost.')) return;
+  state.nodes.filter(n => n.type === 'bridge').forEach(n => n.el.remove());
+  state.nodes = state.nodes.filter(n => n.type !== 'bridge');
+  state.edges = [];
+  state.won   = false;
+  state.placement = null;
+  svg.innerHTML = '';
+  placementEl.classList.add('hidden');
+  updateWordCount();
+  setStatus('');
+  localStorage.removeItem(`wordlink-progress-${todayKey()}`);
+}
+
+function undoLast() {
+  if (state.won) return;
+  const bridges = state.nodes.filter(n => n.type === 'bridge');
+  if (!bridges.length) return;
+  removeNode(bridges[bridges.length - 1].id);
+  saveProgress(false);
+}
+
+// ─────────────────────────────────────────────────────────
+// Initialisation
+// ─────────────────────────────────────────────────────────
+function init() {
+  svg        = document.getElementById('connections-svg');
+  bubblesEl  = document.getElementById('bubbles-container');
+  placementEl = document.getElementById('placement-indicator');
+  wordInput  = document.getElementById('word-input');
+  statusEl   = document.getElementById('status-message');
+
+  // Size the SVG
+  svg.setAttribute('width',  CONFIG.canvasW);
+  svg.setAttribute('height', CONFIG.canvasH);
+
+  // Daily word pair
+  const [startWord, endWord] = getDailyPair();
+  document.getElementById('word-start').textContent = startWord;
+  document.getElementById('word-end').textContent   = endWord;
+  document.getElementById('puzzle-number').textContent = `#${getPuzzleNumber()}`;
+
+  // Create anchor nodes
+  createNode(startWord, CONFIG.startX, CONFIG.startY, 'start');
+  createNode(endWord,   CONFIG.endX,   CONFIG.endY,   'end');
+
+  // Pre-warm similarity cache for anchors (best-effort, no await)
+  fetchRelated(startWord).catch(() => {});
+  fetchRelated(endWord).catch(() => {});
+
+  updateBestScore();
+
+  // Canvas click
+  document.getElementById('game-canvas').addEventListener('click', onCanvasClick);
+
+  // Input
+  wordInput.addEventListener('keydown', e => { if (e.key === 'Enter') addWord(); });
+  document.getElementById('add-btn').addEventListener('click', addWord);
+
+  // Drag (mouse)
+  document.addEventListener('mousemove', onDocMouseMove);
+  document.addEventListener('mouseup',   onDocMouseUp);
+
+  // Drag (touch)
+  document.addEventListener('touchmove', onDocTouchMove, { passive: false });
+  document.addEventListener('touchend',  onDocTouchEnd);
+
+  // Reset / Undo
+  document.getElementById('reset-btn').addEventListener('click', resetGame);
+  document.getElementById('undo-btn').addEventListener('click', undoLast);
+
+  // Victory modal actions
+  document.getElementById('copy-result-btn').addEventListener('click', e => {
+    const text = e.currentTarget.dataset.shareText || '';
+    navigator.clipboard.writeText(text).then(() => {
+      e.currentTarget.textContent = 'Copied!';
+      setTimeout(() => { e.currentTarget.textContent = 'Copy Result'; }, 2000);
+    }).catch(() => {
+      prompt('Copy this result:', text);
+    });
+  });
+  document.getElementById('close-modal-btn').addEventListener('click', () => {
+    document.getElementById('victory-modal').classList.add('hidden');
+  });
+  document.getElementById('victory-modal').querySelector('.modal-backdrop').addEventListener('click', () => {
+    document.getElementById('victory-modal').classList.add('hidden');
+  });
+
+  // How-to-play modal
+  document.getElementById('how-to-btn').addEventListener('click', () => {
+    document.getElementById('help-modal').classList.remove('hidden');
+  });
+  document.getElementById('close-help-btn').addEventListener('click', () => {
+    document.getElementById('help-modal').classList.add('hidden');
+  });
+  document.getElementById('help-modal').querySelector('.modal-backdrop').addEventListener('click', () => {
+    document.getElementById('help-modal').classList.add('hidden');
+  });
+
+  // Restore saved progress
+  loadProgress();
+}
+
+// Start once DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}

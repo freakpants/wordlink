@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WordLink – Semantic Word Path Game</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- ── Header ────────────────────────────────────────── -->
+    <header>
+      <div class="header-left">
+        <h1>🔗 <span>WordLink</span></h1>
+        <span id="puzzle-number" class="puzzle-num">#1</span>
+      </div>
+      <button id="how-to-btn" class="icon-btn" title="How to play">?</button>
+    </header>
+
+    <!-- ── Target Words ──────────────────────────────────── -->
+    <div id="targets">
+      <div class="target-chip start-chip">
+        <span id="word-start">…</span>
+      </div>
+      <div class="target-divider">
+        <svg viewBox="0 0 60 14" width="60" height="14" fill="none">
+          <line x1="0" y1="7" x2="52" y2="7" stroke="#475569" stroke-width="1.5"/>
+          <polyline points="44,1 54,7 44,13" stroke="#475569" stroke-width="1.5" fill="none"/>
+        </svg>
+      </div>
+      <div class="target-chip end-chip">
+        <span id="word-end">…</span>
+      </div>
+      <div class="target-stats">
+        Words used: <strong id="word-count">0</strong>
+        &nbsp;|&nbsp;
+        Best: <strong id="best-score">–</strong>
+      </div>
+    </div>
+
+    <!-- ── Canvas ─────────────────────────────────────────── -->
+    <div id="canvas-wrapper">
+      <div id="game-canvas">
+        <svg id="connections-svg" aria-hidden="true"></svg>
+        <div id="bubbles-container"></div>
+        <div id="placement-indicator" class="hidden" aria-hidden="true"></div>
+      </div>
+    </div>
+
+    <!-- ── Help hint ──────────────────────────────────────── -->
+    <p id="canvas-hint">Click the canvas to pick a placement spot, then type a word below</p>
+
+    <!-- ── Input ─────────────────────────────────────────── -->
+    <div id="input-row">
+      <input
+        type="text"
+        id="word-input"
+        placeholder="Enter a word…"
+        maxlength="30"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
+      />
+      <button id="add-btn">Add</button>
+    </div>
+
+    <!-- ── Status ─────────────────────────────────────────── -->
+    <div id="status-message" aria-live="polite"></div>
+
+    <!-- ── Bottom Controls ──────────────────────────────────── -->
+    <div id="bottom-controls">
+      <button id="reset-btn" class="secondary-btn">Reset</button>
+      <button id="undo-btn" class="secondary-btn">Undo</button>
+    </div>
+
+  </div><!-- #app -->
+
+  <!-- ── Victory Modal ─────────────────────────────────── -->
+  <div id="victory-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="victory-title">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box">
+      <div class="modal-emoji">🎉</div>
+      <h2 id="victory-title">Path Found!</h2>
+      <p>You connected the words using <strong id="final-score">0</strong> bridge word(s).</p>
+      <div id="path-display"></div>
+      <div class="modal-actions">
+        <button id="copy-result-btn" class="primary-btn">Copy Result</button>
+        <button id="close-modal-btn" class="secondary-btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── How-to-Play Modal ─────────────────────────────── -->
+  <div id="help-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="help-title">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box">
+      <h2 id="help-title">How to Play</h2>
+      <ol>
+        <li>Each day you get two <strong>anchor words</strong> (shown in blue and red) placed on the canvas.</li>
+        <li><strong>Click</strong> the canvas to pick where your next word will appear.</li>
+        <li><strong>Type</strong> a word and press <kbd>Enter</kbd> or click <strong>Add</strong>.</li>
+        <li>Two words <strong>connect</strong> when they are physically close <em>and</em> semantically similar.</li>
+        <li>Build a chain of connected words from the blue word to the red word.</li>
+        <li>Your score = number of bridge words used. <strong>Fewer is better!</strong></li>
+      </ol>
+      <p class="tip">💡 Drag any bridge word to reposition it and form new connections.</p>
+      <button id="close-help-btn" class="primary-btn">Got it!</button>
+    </div>
+  </div>
+
+  <script src="words.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
