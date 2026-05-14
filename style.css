@@ -109,6 +109,11 @@ header h1 span {
 }
 
 .version-tag {
+  display: none;
+  user-select: none;
+}
+
+.version-tag:not([data-version*="__COMMIT_SHA__"]) {
   display: inline-flex;
   align-items: center;
   min-height: 28px;
@@ -121,7 +126,6 @@ header h1 span {
   color: var(--blue-light);
   font-family: monospace;
   line-height: 1;
-  user-select: none;
 }
 
 .version-tag:not([data-version*="__COMMIT_SHA__"]):empty::before {
