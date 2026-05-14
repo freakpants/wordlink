@@ -15,6 +15,7 @@ const CONFIG = {
   dragClickSuppressMs: 180,
   simBadgeOffsetY: 26,
   simBadgeBottomMargin: 10,
+  simAlphaBase: 0.22,
   simAlphaLoading: 0.25,
   simAlphaError: 0.2,
   simAlphaScale: 0.7,
@@ -74,7 +75,14 @@ function shakeInput() {
 function getSimilarityInspectAlpha(sim) {
   if (sim === null) return CONFIG.simAlphaError;
   if (sim === undefined) return CONFIG.simAlphaLoading;
-  return CONFIG.simAlphaLoading + sim * CONFIG.simAlphaScale;
+  return CONFIG.simAlphaBase + sim * CONFIG.simAlphaScale;
+}
+
+function getSimilarityBadgeTop(y) {
+  return Math.min(
+    CONFIG.canvasH - CONFIG.simBadgeBottomMargin,
+    y + CONFIG.simBadgeOffsetY
+  );
 }
 
 // ─────────────────────────────────────────────────────────
@@ -603,7 +611,7 @@ function renderSimilarityView() {
     badge.className = 'sim-badge';
     badge.textContent = sim === null ? 'N/A' : (sim === undefined ? '…' : `${Math.round(sim * 100)}%`);
     badge.style.left = `${n.x}px`;
-    badge.style.top = `${Math.min(CONFIG.canvasH - CONFIG.simBadgeBottomMargin, n.y + CONFIG.simBadgeOffsetY)}px`;
+    badge.style.top = `${getSimilarityBadgeTop(n.y)}px`;
     similarityOverlayEl.appendChild(badge);
   });
 }
