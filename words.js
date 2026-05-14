@@ -380,7 +380,7 @@ function seedFromGameId(gameId) {
   return hash >>> 0;
 }
 
-function normalisePracticeGameId(gameId) {
+function normalizePracticeGameId(gameId) {
   const normalized = String(gameId || '')
     .trim()
     .toLowerCase()
@@ -407,7 +407,7 @@ function getDailyPair() {
 }
 
 function getPracticePair(gameId) {
-  const normalized = normalisePracticeGameId(gameId);
+  const normalized = normalizePracticeGameId(gameId);
   const seed = normalized ? seedFromGameId(normalized) : (Date.now() >>> 0);
   const rng = seededRng(seed);
   return getRandomPair(rng);

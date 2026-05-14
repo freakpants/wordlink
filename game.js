@@ -81,7 +81,7 @@ function getPuzzleLabel(mode = state.puzzle.mode) {
 
 function getPracticeGameIdFromUrl() {
   const params = new URLSearchParams(window.location.search);
-  return normalisePracticeGameId(params.get('gid'));
+  return normalizePracticeGameId(params.get('gid'));
 }
 
 function syncPuzzleUrl() {
@@ -889,7 +889,7 @@ function startPuzzle(mode, { force = false, gameId = null } = {}) {
 
   clearBoard();
   const practiceGameId = mode === 'practice'
-    ? (normalisePracticeGameId(gameId) || createPracticeGameId())
+    ? (normalizePracticeGameId(gameId) || createPracticeGameId())
     : null;
 
   state.puzzle = {
