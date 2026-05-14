@@ -15,7 +15,13 @@
         <h1>🔗 <span>WordLink</span></h1>
         <span id="puzzle-number" class="puzzle-num">#1</span>
       </div>
-      <button id="how-to-btn" class="icon-btn" title="How to play">?</button>
+      <div class="header-right">
+        <div class="mode-switch" role="group" aria-label="Puzzle mode">
+          <button id="daily-mode-btn" class="mode-btn is-active" type="button">Daily</button>
+          <button id="practice-mode-btn" class="mode-btn" type="button">Practice</button>
+        </div>
+        <button id="how-to-btn" class="icon-btn" title="How to play">?</button>
+      </div>
     </header>
 
     <!-- ── Target Words ──────────────────────────────────── -->
@@ -50,7 +56,17 @@
     </div>
 
     <!-- ── Help hint ──────────────────────────────────────── -->
-    <p id="canvas-hint">Click the canvas to pick a placement spot. Click any word bubble to inspect similarity.</p>
+    <p id="canvas-hint">Click the canvas to pick a placement spot. Click any word bubble to inspect 0–100% closeness.</p>
+
+    <section id="similarity-panel" class="hidden" aria-live="polite">
+      <div class="similarity-panel-header">
+        <div>
+          <h2 id="similarity-panel-title">Closeness scores</h2>
+          <p id="similarity-panel-subtitle">0% = loosely related, 100% = nearly identical.</p>
+        </div>
+      </div>
+      <div id="similarity-list"></div>
+    </section>
 
     <!-- ── Input ─────────────────────────────────────────── -->
     <div id="input-row">
@@ -103,10 +119,11 @@
         <li><strong>Click</strong> the canvas to pick where your next word will appear.</li>
         <li><strong>Type</strong> a word and press <kbd>Enter</kbd> or click <strong>Add</strong>.</li>
         <li>Two words <strong>connect</strong> when they are semantically similar enough.</li>
+        <li>Click any bubble to see how close it is to every other word on a clearer 0–100% scale.</li>
         <li>Build a chain of connected words from the blue word to the red word.</li>
         <li>Your score = number of bridge words used. <strong>Fewer is better!</strong></li>
       </ol>
-      <p class="tip">💡 Drag any bridge word to reposition it and form new connections.</p>
+      <p class="tip">💡 Drag any bridge word to reposition it and form new connections. Use <strong>Practice</strong> for a fresh random puzzle any time.</p>
       <button id="close-help-btn" class="primary-btn">Got it!</button>
     </div>
   </div>
