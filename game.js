@@ -102,7 +102,7 @@ async function fetchRelated(word) {
       .then(r => r.ok ? r.json() : []).catch(() => []),
   ]);
 
-  if (!mlData.length && !trgData.length) throw new Error('Datamuse fetch failed');
+  if (!mlData.length && !trgData.length) throw new Error('No related words returned from Datamuse');
 
   // Merge both lists, keeping the highest score per word; normalise to lowercase.
   const merged = new Map();
@@ -149,8 +149,8 @@ async function getSimilarity(w1, w2) {
   for (const w of set1) { if (set2.has(w)) shared++; }
   const union = set1.size + set2.size - shared;
   const jaccard = union > 0 ? shared / union : 0;
-  // Related pairs typically share 5–20 % of neighbours; scale so that
-  // a jaccard of ~0.10 maps to a similarity of ~0.50.
+  // Multiply by 5 so a jaccard of 0.10 (10 % shared neighbours) maps to
+  // a similarity of 0.50, and 0.20 saturates at 1.0.
   const sharedNorm = Math.min(1, jaccard * 5);
 
   const norm = Math.max(directNorm, sharedNorm);
