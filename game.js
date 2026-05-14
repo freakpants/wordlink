@@ -81,7 +81,7 @@ function getBestStorageKey() {
 
 function getPuzzleLabel(mode = state.puzzle.mode) {
   if (mode === 'daily') return `#${getPuzzleNumber()}`;
-  return state.puzzle.gameId ? `Practice · ${state.puzzle.gameId}` : 'Practice';
+  return state.puzzle.gameId ? `Practice - ${state.puzzle.gameId}` : 'Practice';
 }
 
 function getPracticeGameIdFromUrl() {
@@ -126,6 +126,8 @@ function getSimilarityDisplayPercent(sourceWord, targetWord, sim) {
     );
   }
   const percent = Math.round(Math.max(0, Math.min(1, base)) * 100);
+  // Keep 100% exclusive to effectively-perfect matches so near-perfect values
+  // remain visually distinct from true perfect closeness.
   return percent >= 100 && base < CONFIG.closenessPerfectThreshold ? 99 : percent;
 }
 

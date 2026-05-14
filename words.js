@@ -356,9 +356,7 @@ const DICTIONARY_WORDS = [
   'horses', 'hungry', 'informed', 'innocent',
 ];
 
-// Curated and dictionary lists intentionally overlap in a few places, so we
-// dedupe once at startup before puzzle selection.
-const WORDS = Array.from(new Set([...CURATED_WORDS, ...DICTIONARY_WORDS]));
+const WORDS = [...CURATED_WORDS, ...DICTIONARY_WORDS];
 
 // ─────────────────────────────────────────────────────────
 // Seeded PRNG (splitmix32)
