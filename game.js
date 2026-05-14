@@ -38,6 +38,9 @@ const CONFIG = {
   bubblePaddingBase: 70,
   bubblePaddingPerChar: 4,
   bubblePaddingCap: 126,
+  nodeMinMarginX: 30,
+  nodeMinMarginY: 20,
+  nodeEdgeBuffer: 8,
   zoomMin: 0.75,
   zoomMax: 1.75,
   zoomStep: 0.05,
@@ -359,8 +362,12 @@ function updateNodePosition(id, x, y) {
   const measuredW = node.el?.offsetWidth || 0;
   const measuredH = node.el?.offsetHeight || 0;
   const estimatedMargins = getEstimatedBubbleMargins(node.word, node.type);
-  const marginX = measuredW > 1 ? Math.max(30, measuredW / 2 + 8) : estimatedMargins.marginX;
-  const marginY = measuredH > 1 ? Math.max(20, measuredH / 2 + 8) : estimatedMargins.marginY;
+  const marginX = measuredW > 1
+    ? Math.max(CONFIG.nodeMinMarginX, measuredW / 2 + CONFIG.nodeEdgeBuffer)
+    : estimatedMargins.marginX;
+  const marginY = measuredH > 1
+    ? Math.max(CONFIG.nodeMinMarginY, measuredH / 2 + CONFIG.nodeEdgeBuffer)
+    : estimatedMargins.marginY;
   node.x = Math.max(marginX, Math.min(CONFIG.canvasW - marginX, x));
   node.y = Math.max(marginY, Math.min(CONFIG.canvasH - marginY, y));
   node.el.style.left = `${node.x}px`;
@@ -371,8 +378,8 @@ function getEstimatedBubbleMargins(word, type = 'bridge') {
   const estimatedWidth = Math.max(type === 'bridge' ? 96 : 108, 42 + word.length * 10);
   const estimatedHeight = type === 'bridge' ? 36 : 40;
   return {
-    marginX: Math.max(30, estimatedWidth / 2 + 8),
-    marginY: Math.max(20, estimatedHeight / 2 + 8),
+    marginX: Math.max(CONFIG.nodeMinMarginX, estimatedWidth / 2 + CONFIG.nodeEdgeBuffer),
+    marginY: Math.max(CONFIG.nodeMinMarginY, estimatedHeight / 2 + CONFIG.nodeEdgeBuffer),
   };
 }
 
@@ -768,11 +775,13 @@ function onBubbleMouseDown(e, id) {
 function startDrag(clientX, clientY, nodeId) {
   const node = state.nodes.find(n => n.id === nodeId);
   if (!node || node.type !== 'bridge') return;
-  const point = clientToCanvasPoint(clientX, clientY);
+  const canvasRect = canvasEl.getBoundingClientRect();
+  const point = clientToCanvasPoint(clientX, clientY, canvasRect);
   state.dragInfo = {
     nodeId,
     offsetX: point.x - node.x,
     offsetY: point.y - node.y,
+    canvasRect,
     startX: clientX,
     startY: clientY,
     moved: false,
@@ -786,7 +795,7 @@ function onDocMouseMove(e) {
     const movedY = Math.abs(e.clientY - state.dragInfo.startY);
     if (movedX > 4 || movedY > 4) state.dragInfo.moved = true;
   }
-  const point = clientToCanvasPoint(e.clientX, e.clientY);
+  const point = clientToCanvasPoint(e.clientX, e.clientY, state.dragInfo.canvasRect);
   const x = point.x - state.dragInfo.offsetX;
   const y = point.y - state.dragInfo.offsetY;
   updateNodePosition(state.dragInfo.nodeId, x, y);
@@ -823,7 +832,7 @@ function onDocTouchMove(e) {
     const movedY = Math.abs(e.touches[0].clientY - state.dragInfo.startY);
     if (movedX > 4 || movedY > 4) state.dragInfo.moved = true;
   }
-  const point = clientToCanvasPoint(e.touches[0].clientX, e.touches[0].clientY);
+  const point = clientToCanvasPoint(e.touches[0].clientX, e.touches[0].clientY, state.dragInfo.canvasRect);
   const x = point.x - state.dragInfo.offsetX;
   const y = point.y - state.dragInfo.offsetY;
   updateNodePosition(state.dragInfo.nodeId, x, y);
@@ -1042,8 +1051,7 @@ function applyCanvasZoom(zoom, { anchorClientX = null, anchorClientY = null } = 
   updateZoomUi();
 }
 
-function clientToCanvasPoint(clientX, clientY) {
-  const rect = canvasEl.getBoundingClientRect();
+function clientToCanvasPoint(clientX, clientY, rect = canvasEl.getBoundingClientRect()) {
   const zoom = state.view.zoom || 1;
   return {
     x: (clientX - rect.left) / zoom,
