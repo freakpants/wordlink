@@ -95,6 +95,8 @@ function getPuzzleLabel(mode = state.puzzle.mode) {
 }
 
 function getPracticeGameIdFromUrl() {
+  // Support legacy/shared practice URLs while the app now emits bare-number
+  // query strings like `?42`.
   const params = new URLSearchParams(window.location.search);
   const bareQuery = window.location.search.replace(/^\?/, '').trim();
   const bareSearch = bareQuery && !bareQuery.includes('=') ? bareQuery : null;
@@ -383,8 +385,8 @@ function getAutoPlacement(word) {
   let dx = primary.x - secondary.x;
   let dy = primary.y - secondary.y;
   if (Math.abs(dx) < 4 && Math.abs(dy) < 4) {
-    const seed = word.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), state.nodes.length);
-    const angle = (seed % 360) * (Math.PI / 180);
+    const angleSeed = word.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), state.nodes.length);
+    const angle = (angleSeed % 360) * (Math.PI / 180);
     dx = Math.cos(angle);
     dy = Math.sin(angle);
   }
@@ -1020,8 +1022,9 @@ async function isPlayableAnchorPair(startWord, endWord) {
     ]);
     const similarity = await getSimilarity(startWord, endWord);
     return similarity < CONFIG.anchorMaxSimilarity;
-  } catch (_) {
-    return true;
+  } catch (err) {
+    console.warn(`Could not validate anchor pair "${startWord}" → "${endWord}".`, err);
+    return false;
   }
 }
 
