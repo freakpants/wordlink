@@ -115,6 +115,10 @@ header h1 span {
   user-select: none;
 }
 
+.version-tag:not([data-version*="__COMMIT_SHA__"]):empty::before {
+  content: attr(data-version);
+}
+
 .icon-btn {
   width: 32px;
   height: 32px;
