@@ -359,8 +359,12 @@ const DICTIONARY_WORDS = [
 // Filter obviously non-standard entries so anchor words stay clean and
 // dictionary-like (misspellings/slang/profanity/technical tokens).
 const NON_STANDARD_WORDS = new Set([
+  // Common misspellings / contraction-stripped forms.
   'dont', 'thats', 'lets', 'gonna', 'wanna', 'gotta', 'kinda', 'haha',
-  'http', 'bitch', 'bullshit', 'damn', 'fucked', 'hell', 'porn',
+  // Technical tokens.
+  'http',
+  // Profanity / explicit terms.
+  'bitch', 'bullshit', 'damn', 'fucked', 'hell', 'porn',
 ]);
 
 function isUsableWord(word) {
@@ -384,7 +388,10 @@ async function loadLibraryWords() {
     patterns.map(sp =>
       fetch(`https://api.datamuse.com/words?sp=${encodeURIComponent(sp)}&max=200`)
         .then(r => (r.ok ? r.json() : []))
-        .catch(() => [])
+        .catch(err => {
+          console.warn(`Could not load Datamuse library words for pattern "${sp}".`, err);
+          return [];
+        })
     )
   )
     .then(groups => {

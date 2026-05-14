@@ -23,9 +23,9 @@ const CONFIG = {
   closenessNeighborhoodWeight: 0.35,
   closenessEdgeWeight: 0.10,
   closenessPerfectThreshold: 0.999,
-  closenessCurveStrength: 2.2,
-  closenessDisplayMin: 5,
-  closenessDisplayMax: 95,
+  closenessCurveStrength: 2.2, // steeper midpoint spread for displayed percentages
+  closenessDisplayMin: 5,      // keep non-zero scores away from hard 0%
+  closenessDisplayMax: 95,     // keep non-perfect scores away from hard 100%
   shareUrl: 'https://freakpants.github.io/wordlink/',
 };
 
@@ -128,8 +128,9 @@ function getSimilarityDisplayPercent(sourceWord, targetWord, sim) {
   if (normalized >= CONFIG.closenessPerfectThreshold) return 100;
   if (normalized <= 0.001) return 0;
 
-  // Apply an S-curve so most values spread through the mid-range instead of
-  // clustering at the extremes; larger curve strength = steeper midpoint.
+  // Apply tanh S-curve centered on 0.5: (normalized - 0.5) centers the curve,
+  // tanh maps to [-1,1], then ( +1 ) / 2 maps back to [0,1]. This spreads the
+  // middle and reduces bunching near 0/100.
   const curved = (Math.tanh((normalized - 0.5) * CONFIG.closenessCurveStrength) + 1) / 2;
   return Math.round(
     CONFIG.closenessDisplayMin +
