@@ -10,7 +10,7 @@ const CONFIG = {
   endX:   900, endY:   280,
   minSimilarity:    0.10,  // normalized [0,1] – weakest visible link
   pathSimilarity:   0.16,  // normalized – required to count as path edge
-  anchorMaxSimilarity: 0.08,
+  anchorMaxSimilarity: 0.08, // keep anchor pairs from starting as a direct link
   anchorPairCandidateCount: 12,
   maxBridgeWords:   25,
   dragClickSuppressMs: 180,
@@ -95,8 +95,8 @@ function getPuzzleLabel(mode = state.puzzle.mode) {
 }
 
 function getPracticeGameIdFromUrl() {
-  // Support legacy/shared practice URLs while the app now emits bare-number
-  // query strings like `?42`.
+  // The app now emits bare-number query strings like `?42`, but we still accept
+  // older `?gid=42`, `#42`, and trailing `/42` formats for shared legacy links.
   const params = new URLSearchParams(window.location.search);
   const bareQuery = window.location.search.replace(/^\?/, '').trim();
   const bareSearch = bareQuery && !bareQuery.includes('=') ? bareQuery : null;
@@ -718,12 +718,12 @@ function onBubbleMouseDown(e, id) {
   startDrag(e.clientX, e.clientY, id);
 }
 
-function startDrag(clientX, clientY, id) {
+function startDrag(clientX, clientY, nodeId) {
   const canvasRect = document.getElementById('game-canvas').getBoundingClientRect();
-  const node = state.nodes.find(n => n.id === id);
+  const node = state.nodes.find(n => n.id === nodeId);
   if (!node || node.type !== 'bridge') return;
   state.dragInfo = {
-    nodeId: id,
+    nodeId,
     offsetX: clientX - canvasRect.left - node.x,
     offsetY: clientY - canvasRect.top  - node.y,
     startX: clientX,
@@ -1077,6 +1077,8 @@ async function startPuzzle(mode, { force = false, gameId = null } = {}) {
   setStatus('Finding a fair anchor pair…');
 
   const [startWord, endWord] = await chooseAnchorPair(mode, practiceGameId);
+  // Ignore stale async results if the player switched puzzles while this pair
+  // was still being validated.
   if (state.puzzle.loadToken !== currentLoadToken) return;
 
   document.getElementById('word-start').textContent = startWord;
