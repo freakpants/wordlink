@@ -23,7 +23,7 @@ const CONFIG = {
   closenessNeighborhoodWeight: 0.35,
   closenessEdgeWeight: 0.10,
   closenessPerfectThreshold: 0.999,
-  closenessCurveStrength: 2.2, // steeper midpoint spread for displayed percentages
+  closenessCurveStrength: 2.2, // tuned to spread typical Datamuse sims into clearer mid-range buckets
   closenessDisplayMin: 5,      // keep non-zero scores away from hard 0%
   closenessDisplayMax: 95,     // keep non-perfect scores away from hard 100%
   shareUrl: 'https://freakpants.github.io/wordlink/',
