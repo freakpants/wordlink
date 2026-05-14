@@ -25,6 +25,7 @@ const CONFIG = {
   closenessNeighborhoodWeight: 0.35,
   closenessEdgeWeight: 0.10,
   closenessPerfectThreshold: 0.999,
+  closenessFloorEpsilon: 0.001,
   closenessCurveStrength: 2.2, // empirically tuned for observed Datamuse sims (~0.15-0.85) to spread the mid-range
   closenessDisplayMin: 5,      // keep non-zero scores away from hard 0%
   closenessDisplayMax: 95,     // keep non-perfect scores away from hard 100%
@@ -162,7 +163,7 @@ function getSimilarityDisplayPercent(sourceWord, targetWord, sim) {
   }
   const normalized = Math.max(0, Math.min(1, base));
   if (normalized >= CONFIG.closenessPerfectThreshold) return 100;
-  if (normalized <= 0.001) return CONFIG.closenessDisplayFloor;
+  if (normalized <= CONFIG.closenessFloorEpsilon) return CONFIG.closenessDisplayFloor;
 
   // Apply tanh S-curve centered on 0.5: (normalized - 0.5) centers the curve,
   // tanh maps to [-1,1], then ( +1 ) / 2 maps back to [0,1]. Multiplying by
@@ -1062,7 +1063,7 @@ async function startPuzzle(mode, { force = false, gameId = null } = {}) {
     gameId: practiceGameId,
     loadToken: state.puzzle.loadToken + 1,
   };
-  const loadToken = state.puzzle.loadToken;
+  const currentLoadToken = state.puzzle.loadToken;
 
   document.getElementById('word-start').textContent = '…';
   document.getElementById('word-end').textContent = '…';
@@ -1073,7 +1074,7 @@ async function startPuzzle(mode, { force = false, gameId = null } = {}) {
   setStatus('Finding a fair anchor pair…');
 
   const [startWord, endWord] = await chooseAnchorPair(mode, practiceGameId);
-  if (state.puzzle.loadToken !== loadToken) return;
+  if (state.puzzle.loadToken !== currentLoadToken) return;
 
   document.getElementById('word-start').textContent = startWord;
   document.getElementById('word-end').textContent = endWord;
