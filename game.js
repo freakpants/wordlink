@@ -324,7 +324,7 @@ function renderSimilarityPanel(source) {
 
   document.getElementById('similarity-panel-title').textContent = `Closeness to "${source.word}"`;
   document.getElementById('similarity-panel-subtitle').textContent =
-    'Sorted from closest to farthest. 100% should be exceptionally rare.';
+    'Sorted from closest to furthest. 100% should be exceptionally rare.';
 
   const entries = state.nodes
     .filter(n => n.id !== source.id)
