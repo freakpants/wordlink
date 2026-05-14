@@ -4,11 +4,10 @@
 // Configuration
 // ─────────────────────────────────────────────────────────
 const CONFIG = {
-  canvasW: 820,
-  canvasH: 420,
-  startX: 100, startY: 210,
-  endX:   720, endY:   210,
-  connectionRadius: 190,   // px – max distance for a link to form
+  canvasW: 1000,
+  canvasH: 560,
+  startX: 100, startY: 280,
+  endX:   900, endY:   280,
   minSimilarity:    0.10,  // normalized [0,1] – weakest visible link
   pathSimilarity:   0.16,  // normalized – required to count as path edge
   maxBridgeWords:   25,
@@ -37,6 +36,8 @@ let state = {
 
 // Similarity cache: "word1:word2" → score 0‒1
 const simCache = {};
+// Debug cache: "word1:word2" → { directNorm, rawJaccard }
+const simDebugCache = {};
 // Related-words cache: word → [{word, score}]
 const relCache = {};
 
@@ -155,6 +156,7 @@ async function getSimilarity(w1, w2) {
 
   const norm = Math.max(directNorm, sharedNorm);
   simCache[key] = norm;
+  simDebugCache[key] = { directNorm, rawJaccard: jaccard };
   return norm;
 }
 
@@ -221,7 +223,6 @@ function rebuildEdges() {
     for (let j = i + 1; j < state.nodes.length; j++) {
       const a = state.nodes[i];
       const b = state.nodes[j];
-      if (dist(a, b) > CONFIG.connectionRadius) continue;
       const key = simCacheKey(a.word, b.word);
       const sim = simCache[key];
       if (sim !== undefined && sim >= CONFIG.minSimilarity) {
@@ -645,7 +646,20 @@ function renderSimilarityView() {
 
     const badge = document.createElement('div');
     badge.className = 'sim-badge';
-    badge.textContent = sim === null ? 'N/A' : (sim === undefined ? '…' : `${Math.round(sim * 100)}%`);
+    if (sim === null) {
+      badge.textContent = 'N/A';
+    } else if (sim === undefined) {
+      badge.textContent = '…';
+    } else {
+      const dbg = simDebugCache[simCacheKey(source.word, n.word)];
+      if (dbg) {
+        badge.innerHTML =
+          `${Math.round(sim * 100)}%` +
+          `<span class="sim-badge-detail">D:${Math.round(dbg.directNorm * 100)}% N:${Math.round(dbg.rawJaccard * 100)}%</span>`;
+      } else {
+        badge.textContent = `${Math.round(sim * 100)}%`;
+      }
+    }
     badge.style.left = `${n.x}px`;
     badge.style.top = `${getSimilarityBadgeTop(n.y)}px`;
     similarityOverlayEl.appendChild(badge);
