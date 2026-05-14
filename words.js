@@ -14,7 +14,7 @@ const WORD_PAIRS = [
   ['rain', 'desert'],
   ['bird', 'fish'],
   ['king', 'servant'],
-  ['fast', 'slow'],
+  ['glacier', 'volcano'],
   ['love', 'hate'],
   ['light', 'shadow'],
   ['coffee', 'sleep'],
@@ -61,6 +61,18 @@ const WORD_PAIRS = [
   ['sword', 'shield'],
   ['teacher', 'student'],
   ['bread', 'wine'],
+  ['island', 'metropolis'],
+  ['compass', 'maze'],
+  ['telescope', 'microscope'],
+  ['lantern', 'satellite'],
+  ['thunder', 'harbor'],
+  ['garden', 'factory'],
+  ['fossil', 'neon'],
+  ['meteor', 'orchard'],
+  ['quill', 'microchip'],
+  ['meadow', 'citadel'],
+  ['avalanche', 'temple'],
+  ['coral', 'observatory'],
 ];
 
 /**

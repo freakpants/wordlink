@@ -12,6 +12,13 @@ const CONFIG = {
   minSimilarity:    0.10,  // normalized [0,1] – weakest visible link
   pathSimilarity:   0.16,  // normalized – required to count as path edge
   maxBridgeWords:   25,
+  dragClickSuppressMs: 180,
+  simBadgeOffsetY: 26,
+  simBadgeBottomMargin: 10,
+  simAlphaBase: 0.22,
+  simAlphaLoading: 0.25,
+  simAlphaError: 0.2,
+  simAlphaScale: 0.7,
   shareUrl: 'https://freakpants.github.io/wordlink/',
 };
 
@@ -24,6 +31,8 @@ let state = {
   won:       false,
   dragInfo:  null,   // { node, offsetX, offsetY }
   placement: null,   // { x, y } – where next word will be placed
+  similarityView: { sourceId: null, scores: {}, token: 0 },
+  suppressBubbleClickUntil: 0,
 };
 
 // Similarity cache: "word1:word2" → score 0‒1
@@ -34,7 +43,7 @@ const relCache = {};
 // ─────────────────────────────────────────────────────────
 // DOM refs
 // ─────────────────────────────────────────────────────────
-let svg, bubblesEl, placementEl, wordInput, statusEl;
+let svg, bubblesEl, similarityOverlayEl, placementEl, wordInput, statusEl;
 
 // ─────────────────────────────────────────────────────────
 // Utility helpers
@@ -61,6 +70,19 @@ function shakeInput() {
   void wordInput.offsetWidth; // force reflow
   wordInput.classList.add('shake');
   wordInput.addEventListener('animationend', () => wordInput.classList.remove('shake'), { once: true });
+}
+
+function getSimilarityInspectAlpha(sim) {
+  if (sim === null) return CONFIG.simAlphaError;
+  if (sim === undefined) return CONFIG.simAlphaLoading;
+  return CONFIG.simAlphaBase + sim * CONFIG.simAlphaScale;
+}
+
+function getSimilarityBadgeTop(y) {
+  return Math.min(
+    CONFIG.canvasH - CONFIG.simBadgeBottomMargin,
+    y + CONFIG.simBadgeOffsetY
+  );
 }
 
 // ─────────────────────────────────────────────────────────
@@ -112,6 +134,7 @@ function createNode(word, x, y, type) {
   el.style.left = `${x}px`;
   el.style.top  = `${y}px`;
   el.dataset.id = id;
+  el.addEventListener('click', e => onBubbleClick(e, id));
 
   if (type === 'bridge') {
     el.addEventListener('mousedown',  e => onBubbleMouseDown(e, id));
@@ -134,6 +157,11 @@ function removeNode(id) {
   if (node.type !== 'bridge') return;
   node.el.remove();
   state.nodes.splice(idx, 1);
+  if (state.similarityView.sourceId === id) {
+    clearSimilarityView(false);
+  } else {
+    delete state.similarityView.scores[id];
+  }
   updateWordCount();
   rebuildEdges();
 }
@@ -169,6 +197,7 @@ function rebuildEdges() {
 
   renderAllEdges();
   updateNodeConnectedState();
+  renderSimilarityView();
   checkVictory();
 }
 
@@ -372,6 +401,7 @@ async function addWord() {
   }
 
   rebuildEdges();
+  refreshSimilarityView();
   saveProgress(false);
   wordInput.focus();
 }
@@ -394,11 +424,19 @@ function startDrag(clientX, clientY, id) {
     id,
     offsetX: clientX - canvasRect.left - node.x,
     offsetY: clientY - canvasRect.top  - node.y,
+    startX: clientX,
+    startY: clientY,
+    moved: false,
   };
 }
 
 function onDocMouseMove(e) {
   if (!state.dragInfo) return;
+  if (!state.dragInfo.moved) {
+    const movedX = Math.abs(e.clientX - state.dragInfo.startX);
+    const movedY = Math.abs(e.clientY - state.dragInfo.startY);
+    if (movedX > 4 || movedY > 4) state.dragInfo.moved = true;
+  }
   const canvasRect = document.getElementById('game-canvas').getBoundingClientRect();
   const x = e.clientX - canvasRect.left - state.dragInfo.offsetX;
   const y = e.clientY - canvasRect.top  - state.dragInfo.offsetY;
@@ -408,6 +446,9 @@ function onDocMouseMove(e) {
 
 function onDocMouseUp() {
   if (!state.dragInfo) return;
+  if (state.dragInfo.moved) {
+    state.suppressBubbleClickUntil = performance.now() + CONFIG.dragClickSuppressMs;
+  }
   state.dragInfo = null;
   saveProgress(false);
 }
@@ -425,6 +466,11 @@ function onBubbleTouchStart(e, id) {
 function onDocTouchMove(e) {
   if (!state.dragInfo || e.touches.length !== 1) return;
   e.preventDefault();
+  if (!state.dragInfo.moved) {
+    const movedX = Math.abs(e.touches[0].clientX - state.dragInfo.startX);
+    const movedY = Math.abs(e.touches[0].clientY - state.dragInfo.startY);
+    if (movedX > 4 || movedY > 4) state.dragInfo.moved = true;
+  }
   const canvasRect = document.getElementById('game-canvas').getBoundingClientRect();
   const x = e.touches[0].clientX - canvasRect.left - state.dragInfo.offsetX;
   const y = e.touches[0].clientY - canvasRect.top  - state.dragInfo.offsetY;
@@ -434,6 +480,9 @@ function onDocTouchMove(e) {
 
 function onDocTouchEnd() {
   if (!state.dragInfo) return;
+  if (state.dragInfo.moved) {
+    state.suppressBubbleClickUntil = performance.now() + CONFIG.dragClickSuppressMs;
+  }
   state.dragInfo = null;
   saveProgress(false);
 }
@@ -445,6 +494,7 @@ function onCanvasClick(e) {
   if (state.won) return;
   // Ignore if clicking on a bubble
   if (e.target.classList.contains('word-bubble')) return;
+  clearSimilarityView(false);
   const rect = e.currentTarget.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
@@ -459,6 +509,112 @@ function onCanvasClick(e) {
 function clearPlacement() {
   state.placement = null;
   placementEl.classList.add('hidden');
+}
+
+function onBubbleClick(e, id) {
+  e.stopPropagation();
+  if (performance.now() < state.suppressBubbleClickUntil) {
+    return;
+  }
+  toggleSimilarityViewForNode(id);
+}
+
+function clearSimilarityView(clearStatus = true) {
+  state.similarityView.sourceId = null;
+  state.similarityView.scores = {};
+  state.similarityView.token++;
+  renderSimilarityView();
+  if (clearStatus) setStatus('');
+}
+
+async function toggleSimilarityViewForNode(id) {
+  const node = state.nodes.find(n => n.id === id);
+  if (!node) return;
+
+  if (state.similarityView.sourceId === id) {
+    clearSimilarityView(true);
+    return;
+  }
+
+  state.similarityView.sourceId = id;
+  state.similarityView.scores = {};
+  state.similarityView.token++;
+  renderSimilarityView();
+  setStatus(`Loading similarity map for "${node.word}"…`);
+
+  await refreshSimilarityView();
+
+  if (state.similarityView.sourceId === id) {
+    setStatus(`Similarity map for "${node.word}" (click it again to clear).`);
+  }
+}
+
+async function refreshSimilarityView() {
+  const sourceId = state.similarityView.sourceId;
+  if (!sourceId) return;
+  const source = state.nodes.find(n => n.id === sourceId);
+  if (!source) {
+    clearSimilarityView(false);
+    return;
+  }
+
+  const missing = state.nodes.filter(n =>
+    n.id !== sourceId && state.similarityView.scores[n.id] === undefined
+  );
+  if (!missing.length) {
+    renderSimilarityView();
+    return;
+  }
+
+  const token = ++state.similarityView.token;
+  const results = await Promise.all(
+    missing.map(async n => {
+      try {
+        const sim = await getSimilarity(source.word, n.word);
+        return { id: n.id, sim };
+      } catch (err) {
+        console.warn(`Similarity check failed for "${source.word}" and "${n.word}".`, err);
+        return { id: n.id, sim: null };
+      }
+    })
+  );
+
+  if (state.similarityView.sourceId !== sourceId || state.similarityView.token !== token) return;
+
+  results.forEach(r => {
+    state.similarityView.scores[r.id] = r.sim;
+  });
+  renderSimilarityView();
+}
+
+function renderSimilarityView() {
+  state.nodes.forEach(n => {
+    n.el.classList.remove('inspect-source', 'inspect-target');
+    n.el.style.removeProperty('--inspect-alpha');
+  });
+  similarityOverlayEl.innerHTML = '';
+
+  const sourceId = state.similarityView.sourceId;
+  if (!sourceId) return;
+
+  const source = state.nodes.find(n => n.id === sourceId);
+  if (!source) return;
+  source.el.classList.add('inspect-source');
+
+  state.nodes.forEach(n => {
+    if (n.id === sourceId) return;
+    const sim = state.similarityView.scores[n.id];
+    const alpha = getSimilarityInspectAlpha(sim);
+    n.el.classList.add('inspect-target');
+    n.el.style.setProperty('--inspect-alpha', alpha.toFixed(2));
+
+    const badge = document.createElement('div');
+    badge.className = 'sim-badge';
+    badge.textContent = sim === null ? 'N/A' : (sim === undefined ? '…' : `${Math.round(sim * 100)}%`);
+    badge.style.left = `${n.x}px`;
+    badge.style.top = `${getSimilarityBadgeTop(n.y)}px`;
+    similarityOverlayEl.appendChild(badge);
+  });
 }
 
 // ─────────────────────────────────────────────────────────
@@ -528,6 +684,7 @@ function resetGame() {
   state.edges = [];
   state.won   = false;
   state.placement = null;
+  clearSimilarityView(false);
   svg.innerHTML = '';
   placementEl.classList.add('hidden');
   updateWordCount();
@@ -549,6 +706,7 @@ function undoLast() {
 function init() {
   svg        = document.getElementById('connections-svg');
   bubblesEl  = document.getElementById('bubbles-container');
+  similarityOverlayEl = document.getElementById('similarity-overlay');
   placementEl = document.getElementById('placement-indicator');
   wordInput  = document.getElementById('word-input');
   statusEl   = document.getElementById('status-message');
