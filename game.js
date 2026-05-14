@@ -83,8 +83,8 @@ function getSimilarityDisplayPercent(sourceWord, targetWord, sim) {
   const dbg = simDebugCache[simCacheKey(sourceWord, targetWord)];
   let base = sim;
   if (dbg) {
-    const neighbourhood = Math.sqrt(Math.max(0, dbg.rawJaccard));
-    base = Math.min(1, sim * 0.45 + dbg.directNorm * 0.45 + neighbourhood * 0.10);
+    const neighborhood = Math.sqrt(Math.max(0, dbg.rawJaccard));
+    base = Math.min(1, sim * 0.45 + dbg.directNorm * 0.45 + neighborhood * 0.10);
   }
   const curved = 1 - Math.pow(1 - base, 1.35);
   if (dbg && dbg.directNorm > 0.98 && dbg.rawJaccard > 0.45) return 100;
@@ -314,14 +314,7 @@ function renderSimilarityPanel(source) {
         percent: getSimilarityDisplayPercent(source.word, n.word, sim),
       };
     })
-    .sort((a, b) => {
-      if (a.percent !== null && b.percent !== null) return b.percent - a.percent || a.node.word.localeCompare(b.node.word);
-      if (a.percent !== null) return -1;
-      if (b.percent !== null) return 1;
-      if (a.sim === null && b.sim !== null) return -1;
-      if (a.sim !== null && b.sim === null) return 1;
-      return a.node.word.localeCompare(b.node.word);
-    });
+    .sort(compareSimilarityEntries);
 
   const frag = document.createDocumentFragment();
   entries.forEach(({ node, sim, percent }) => {
@@ -348,6 +341,38 @@ function renderSimilarityPanel(source) {
 
   similarityListEl.appendChild(frag);
   similarityPanelEl.classList.remove('hidden');
+}
+
+function compareSimilarityEntries(a, b) {
+  const aHasPercent = a.percent !== null;
+  const bHasPercent = b.percent !== null;
+  if (aHasPercent && bHasPercent) {
+    return b.percent - a.percent || a.node.word.localeCompare(b.node.word);
+  }
+  if (aHasPercent) return -1;
+  if (bHasPercent) return 1;
+
+  const aIsError = a.sim === null;
+  const bIsError = b.sim === null;
+  if (aIsError && !bIsError) return -1;
+  if (!aIsError && bIsError) return 1;
+  return a.node.word.localeCompare(b.node.word);
+}
+
+function compareSimilarityEntries(a, b) {
+  const aHasPercent = a.percent !== null;
+  const bHasPercent = b.percent !== null;
+  if (aHasPercent && bHasPercent) {
+    return b.percent - a.percent || a.node.word.localeCompare(b.node.word);
+  }
+  if (aHasPercent) return -1;
+  if (bHasPercent) return 1;
+
+  const aIsError = a.sim === null;
+  const bIsError = b.sim === null;
+  if (aIsError && !bIsError) return -1;
+  if (!aIsError && bIsError) return 1;
+  return a.node.word.localeCompare(b.node.word);
 }
 
 function updateNodeConnectedState() {

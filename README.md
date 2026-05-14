@@ -15,7 +15,7 @@ A daily semantic word-path puzzle game, inspired by Linxicon.
 
 Bridge words can be **dragged** to reposition them and form new connections.  
 Double-click a bridge word to remove it.
-Click any word bubble to inspect a clearer **0–100% closeness scale** and see ranked scores for every other word beneath the board.
+Click any word bubble to inspect a clearer **0-100% closeness scale** and see ranked scores for every other word beneath the board.
 Use **Practice** mode for a fresh random puzzle at any time.
 
 ## Technical Details
