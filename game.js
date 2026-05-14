@@ -128,6 +128,8 @@ function getSimilarityDisplayPercent(sourceWord, targetWord, sim) {
   if (normalized >= CONFIG.closenessPerfectThreshold) return 100;
   if (normalized <= 0.001) return 0;
 
+  // Apply an S-curve so most values spread through the mid-range instead of
+  // clustering at the extremes; larger curve strength = steeper midpoint.
   const curved = (Math.tanh((normalized - 0.5) * CONFIG.closenessCurveStrength) + 1) / 2;
   return Math.round(
     CONFIG.closenessDisplayMin +
@@ -904,8 +906,8 @@ function clearBoard() {
 function startPuzzle(mode, { force = false, gameId = null } = {}) {
   const hasBridges = state.nodes.some(n => n.type === 'bridge');
   if (!force && hasBridges) {
-    const nextLabel = mode === 'daily' ? 'today’s daily puzzle' : 'a past daily puzzle';
-    if (!confirm(`Start ${nextLabel}? Your current board will be cleared.`)) return;
+    const puzzleLabel = mode === 'daily' ? 'today’s daily puzzle' : 'a past daily puzzle';
+    if (!confirm(`Start ${puzzleLabel}? Your current board will be cleared.`)) return;
   }
 
   clearBoard();

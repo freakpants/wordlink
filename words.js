@@ -356,6 +356,8 @@ const DICTIONARY_WORDS = [
   'horses', 'hungry', 'informed', 'innocent',
 ];
 
+// Filter obviously non-standard entries so anchor words stay clean and
+// dictionary-like (misspellings/slang/profanity/technical tokens).
 const NON_STANDARD_WORDS = new Set([
   'dont', 'thats', 'lets', 'gonna', 'wanna', 'gotta', 'kinda', 'haha',
   'http', 'bitch', 'bullshit', 'damn', 'fucked', 'hell', 'porn',
