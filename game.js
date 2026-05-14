@@ -25,7 +25,7 @@ const CONFIG = {
   closenessNeighborhoodWeight: 0.35,
   closenessEdgeWeight: 0.10,
   closenessPerfectThreshold: 0.999,
-  closenessFloorEpsilon: 0.001,
+  closenessFloorEpsilon: 0.02,
   closenessCurveStrength: 2.2, // empirically tuned for observed Datamuse sims (~0.15-0.85) to spread the mid-range
   closenessDisplayMin: 5,      // keep non-zero scores away from hard 0%
   closenessDisplayMax: 95,     // keep non-perfect scores away from hard 100%
@@ -36,6 +36,10 @@ const CONFIG = {
   bubblePaddingBase: 70,
   bubblePaddingPerChar: 4,
   bubblePaddingCap: 126,
+  zoomMin: 0.75,
+  zoomMax: 1.75,
+  zoomStep: 0.05,
+  zoomDefault: 1,
   shareUrl: 'https://freakpants.github.io/wordlink/',
 };
 
@@ -49,6 +53,7 @@ let state = {
   dragInfo:  null,   // { nodeId, offsetX, offsetY, startX, startY, moved }
   puzzle:    { mode: 'daily', key: todayKey(), gameId: null, loadToken: 0 },
   similarityView: { sourceId: null, scores: {}, token: 0 },
+  view: { zoom: 1 },
   suppressBubbleClickUntil: 0,
 };
 
@@ -65,6 +70,7 @@ const puzzlePairCache = {};
 // DOM refs
 // ─────────────────────────────────────────────────────────
 let svg, bubblesEl, similarityOverlayEl, wordInput, statusEl, similarityPanelEl, similarityListEl;
+let canvasEl, canvasSizerEl, canvasViewportEl, zoomRangeEl;
 
 // ─────────────────────────────────────────────────────────
 // Utility helpers
@@ -183,7 +189,15 @@ function getSimilarityDisplayPercent(sourceWord, targetWord, sim) {
   }
   const normalized = Math.max(0, Math.min(1, base));
   if (normalized >= CONFIG.closenessPerfectThreshold) return 100;
-  if (normalized <= CONFIG.closenessFloorEpsilon) return CONFIG.closenessDisplayFloor;
+  if (normalized <= CONFIG.closenessFloorEpsilon) {
+    const lowEndRatio = CONFIG.closenessFloorEpsilon > 0
+      ? normalized / CONFIG.closenessFloorEpsilon
+      : 0;
+    return Number((
+      CONFIG.closenessDisplayFloor +
+      lowEndRatio * (CONFIG.closenessDisplayMin - CONFIG.closenessDisplayFloor)
+    ).toFixed(CONFIG.displayDecimals));
+  }
 
   // Apply tanh S-curve centered on 0.5: (normalized - 0.5) centers the curve,
   // tanh maps to [-1,1], then ( +1 ) / 2 maps back to [0,1]. Multiplying by
@@ -317,6 +331,7 @@ function createNode(word, x, y, type) {
 
   const node = { id, word, x, y, type, el };
   state.nodes.push(node);
+  updateNodePosition(id, x, y);
   return node;
 }
 
@@ -341,10 +356,23 @@ function removeNode(id) {
 function updateNodePosition(id, x, y) {
   const node = state.nodes.find(n => n.id === id);
   if (!node) return;
-  node.x = Math.max(30,  Math.min(CONFIG.canvasW - 30, x));
-  node.y = Math.max(20,  Math.min(CONFIG.canvasH - 20, y));
+  const halfW = (node.el?.offsetWidth || 72) / 2;
+  const halfH = (node.el?.offsetHeight || 32) / 2;
+  const marginX = Math.max(30, halfW + 8);
+  const marginY = Math.max(20, halfH + 8);
+  node.x = Math.max(marginX, Math.min(CONFIG.canvasW - marginX, x));
+  node.y = Math.max(marginY, Math.min(CONFIG.canvasH - marginY, y));
   node.el.style.left = `${node.x}px`;
   node.el.style.top  = `${node.y}px`;
+}
+
+function getEstimatedBubbleMargins(word, type = 'bridge') {
+  const estimatedWidth = Math.max(type === 'bridge' ? 96 : 108, 42 + word.length * 10);
+  const estimatedHeight = type === 'bridge' ? 36 : 40;
+  return {
+    marginX: Math.max(30, estimatedWidth / 2 + 8),
+    marginY: Math.max(20, estimatedHeight / 2 + 8),
+  };
 }
 
 function getNodePadding(node) {
@@ -412,10 +440,11 @@ function getAutoPlacement(word) {
   const angleOffset = ((jitterSeed % 9) - 4) * 0.12;
   const baseAngle = Math.atan2(dy, dx) + angleOffset;
   const radius = CONFIG.autoPlaceRadius + ((jitterSeed % 5) - 2) * (CONFIG.autoPlaceJitter / 2);
+  const margins = getEstimatedBubbleMargins(word, 'bridge');
 
   return {
-    x: Math.max(30, Math.min(CONFIG.canvasW - 30, primary.x + Math.cos(baseAngle) * radius)),
-    y: Math.max(20, Math.min(CONFIG.canvasH - 20, primary.y + Math.sin(baseAngle) * radius)),
+    x: Math.max(margins.marginX, Math.min(CONFIG.canvasW - margins.marginX, primary.x + Math.cos(baseAngle) * radius)),
+    y: Math.max(margins.marginY, Math.min(CONFIG.canvasH - margins.marginY, primary.y + Math.sin(baseAngle) * radius)),
   };
 }
 
@@ -720,7 +749,7 @@ async function addWord() {
   }
 
   rebuildEdges();
-  refreshSimilarityView();
+  focusSimilarityOnNode(node.id);
   saveProgress(false);
   wordInput.focus();
 }
@@ -736,13 +765,13 @@ function onBubbleMouseDown(e, id) {
 }
 
 function startDrag(clientX, clientY, nodeId) {
-  const canvasRect = document.getElementById('game-canvas').getBoundingClientRect();
   const node = state.nodes.find(n => n.id === nodeId);
   if (!node || node.type !== 'bridge') return;
+  const point = clientToCanvasPoint(clientX, clientY);
   state.dragInfo = {
     nodeId,
-    offsetX: clientX - canvasRect.left - node.x,
-    offsetY: clientY - canvasRect.top  - node.y,
+    offsetX: point.x - node.x,
+    offsetY: point.y - node.y,
     startX: clientX,
     startY: clientY,
     moved: false,
@@ -756,9 +785,9 @@ function onDocMouseMove(e) {
     const movedY = Math.abs(e.clientY - state.dragInfo.startY);
     if (movedX > 4 || movedY > 4) state.dragInfo.moved = true;
   }
-  const canvasRect = document.getElementById('game-canvas').getBoundingClientRect();
-  const x = e.clientX - canvasRect.left - state.dragInfo.offsetX;
-  const y = e.clientY - canvasRect.top  - state.dragInfo.offsetY;
+  const point = clientToCanvasPoint(e.clientX, e.clientY);
+  const x = point.x - state.dragInfo.offsetX;
+  const y = point.y - state.dragInfo.offsetY;
   updateNodePosition(state.dragInfo.nodeId, x, y);
   rebuildEdges();
 }
@@ -793,9 +822,9 @@ function onDocTouchMove(e) {
     const movedY = Math.abs(e.touches[0].clientY - state.dragInfo.startY);
     if (movedX > 4 || movedY > 4) state.dragInfo.moved = true;
   }
-  const canvasRect = document.getElementById('game-canvas').getBoundingClientRect();
-  const x = e.touches[0].clientX - canvasRect.left - state.dragInfo.offsetX;
-  const y = e.touches[0].clientY - canvasRect.top  - state.dragInfo.offsetY;
+  const point = clientToCanvasPoint(e.touches[0].clientX, e.touches[0].clientY);
+  const x = point.x - state.dragInfo.offsetX;
+  const y = point.y - state.dragInfo.offsetY;
   updateNodePosition(state.dragInfo.nodeId, x, y);
   rebuildEdges();
 }
@@ -899,6 +928,23 @@ async function refreshSimilarityView() {
   renderSimilarityView();
 }
 
+function focusSimilarityOnNode(id) {
+  const source = state.nodes.find(n => n.id === id);
+  if (!source) return;
+  state.similarityView.sourceId = id;
+  state.similarityView.scores = {};
+  state.nodes.forEach(n => {
+    if (n.id === id) return;
+    const cached = simCache[simCacheKey(source.word, n.word)];
+    if (cached !== undefined) {
+      state.similarityView.scores[n.id] = cached;
+    }
+  });
+  state.similarityView.token++;
+  renderSimilarityView();
+  void refreshSimilarityView();
+}
+
 function renderSimilarityView() {
   state.nodes.forEach(n => {
     n.el.classList.remove('inspect-source', 'inspect-target');
@@ -941,6 +987,66 @@ function renderSimilarityView() {
   });
 
   renderSimilarityPanel(source);
+}
+
+function clampZoom(value) {
+  return Math.max(CONFIG.zoomMin, Math.min(CONFIG.zoomMax, value));
+}
+
+function updateZoomUi() {
+  if (zoomRangeEl) zoomRangeEl.value = state.view.zoom.toFixed(2);
+  const resetBtn = document.getElementById('zoom-reset-btn');
+  if (resetBtn) resetBtn.textContent = `${Math.round(state.view.zoom * 100)}%`;
+}
+
+function applyCanvasZoom(zoom, { anchorClientX = null, anchorClientY = null } = {}) {
+  const nextZoom = clampZoom(zoom);
+  const prevZoom = state.view.zoom || 1;
+  const viewport = canvasViewportEl;
+  let anchorOffsetX = null;
+  let anchorOffsetY = null;
+  let worldX = null;
+  let worldY = null;
+
+  if (viewport && anchorClientX !== null && anchorClientY !== null) {
+    const viewportRect = viewport.getBoundingClientRect();
+    anchorOffsetX = anchorClientX - viewportRect.left;
+    anchorOffsetY = anchorClientY - viewportRect.top;
+    worldX = (viewport.scrollLeft + anchorOffsetX) / prevZoom;
+    worldY = (viewport.scrollTop + anchorOffsetY) / prevZoom;
+  }
+
+  state.view.zoom = nextZoom;
+
+  if (canvasEl) {
+    canvasEl.style.transform = `scale(${nextZoom})`;
+  }
+  if (canvasSizerEl) {
+    canvasSizerEl.style.width = `${CONFIG.canvasW * nextZoom}px`;
+    canvasSizerEl.style.height = `${CONFIG.canvasH * nextZoom}px`;
+  }
+  if (viewport && worldX !== null && worldY !== null) {
+    viewport.scrollLeft = worldX * nextZoom - anchorOffsetX;
+    viewport.scrollTop = worldY * nextZoom - anchorOffsetY;
+  }
+
+  updateZoomUi();
+}
+
+function clientToCanvasPoint(clientX, clientY) {
+  const rect = canvasEl.getBoundingClientRect();
+  const zoom = state.view.zoom || 1;
+  return {
+    x: (clientX - rect.left) / zoom,
+    y: (clientY - rect.top) / zoom,
+  };
+}
+
+function onCanvasWheel(e) {
+  if (!e.ctrlKey && !e.metaKey) return;
+  e.preventDefault();
+  const delta = e.deltaY < 0 ? CONFIG.zoomStep : -CONFIG.zoomStep;
+  applyCanvasZoom(state.view.zoom + delta, { anchorClientX: e.clientX, anchorClientY: e.clientY });
 }
 
 // ─────────────────────────────────────────────────────────
@@ -1160,6 +1266,10 @@ function undoLast() {
 // Initialisation
 // ─────────────────────────────────────────────────────────
 function init() {
+  canvasEl = document.getElementById('game-canvas');
+  canvasSizerEl = document.getElementById('canvas-sizer');
+  canvasViewportEl = document.getElementById('canvas-viewport');
+  zoomRangeEl = document.getElementById('zoom-range');
   svg        = document.getElementById('connections-svg');
   bubblesEl  = document.getElementById('bubbles-container');
   similarityOverlayEl = document.getElementById('similarity-overlay');
@@ -1174,7 +1284,13 @@ function init() {
   svg.setAttribute('height', CONFIG.canvasH);
 
   // Canvas click
-  document.getElementById('game-canvas').addEventListener('click', onCanvasClick);
+  canvasEl.addEventListener('click', onCanvasClick);
+  canvasViewportEl.addEventListener('wheel', onCanvasWheel, { passive: false });
+  document.getElementById('zoom-in-btn').addEventListener('click', () => applyCanvasZoom(state.view.zoom + CONFIG.zoomStep));
+  document.getElementById('zoom-out-btn').addEventListener('click', () => applyCanvasZoom(state.view.zoom - CONFIG.zoomStep));
+  document.getElementById('zoom-reset-btn').addEventListener('click', () => applyCanvasZoom(CONFIG.zoomDefault));
+  zoomRangeEl.addEventListener('input', e => applyCanvasZoom(parseFloat(e.target.value)));
+  applyCanvasZoom(CONFIG.zoomDefault);
 
   // Input
   wordInput.addEventListener('keydown', e => { if (e.key === 'Enter') addWord(); });

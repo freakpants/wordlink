@@ -212,10 +212,62 @@ header h1 span {
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
 }
 
-#game-canvas {
+#canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.8);
+  background: rgba(13, 17, 23, 0.65);
+}
+
+.zoom-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.zoom-btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 5px 10px;
+  min-width: 42px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.zoom-btn:hover {
+  border-color: var(--muted);
+}
+
+#zoom-range {
+  width: 130px;
+}
+
+#canvas-viewport {
+  width: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+#canvas-sizer {
   position: relative;
   width: 1000px;
   height: 560px;
+}
+
+#game-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1000px;
+  height: 560px;
+  transform-origin: top left;
   /* dot-grid background */
   background-image: radial-gradient(circle, #30363d 1px, transparent 1px);
   background-size: 28px 28px;
@@ -225,7 +277,7 @@ header h1 span {
 
 /* Make canvas scale down on narrow screens without messing up coordinates */
 @media (max-width: 1040px) {
-  #canvas-wrapper { overflow-x: auto; }
+  #canvas-viewport { overflow-x: auto; }
 }
 
 /* ── SVG connections layer ────────────────────────────── */
