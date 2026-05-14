@@ -315,9 +315,12 @@ function drawEdge(edge, onPath) {
 }
 
 function renderSimilarityPanel(source) {
-  similarityListEl.innerHTML = '';
   similarityPanelEl.classList.add('hidden');
-  if (!source) return;
+  if (!source) {
+    similarityListEl.innerHTML = '';
+    return;
+  }
+  similarityListEl.innerHTML = '';
 
   document.getElementById('similarity-panel-title').textContent = `Closeness to "${source.word}"`;
   document.getElementById('similarity-panel-subtitle').textContent =
@@ -371,10 +374,12 @@ function compareSimilarityEntries(a, b) {
   if (aHasPercent) return -1;
   if (bHasPercent) return 1;
 
+  // After completed scores, keep pending loads ahead of failed lookups so the
+  // list still feels like it is actively filling in.
   const aIsError = a.sim === null;
   const bIsError = b.sim === null;
-  if (aIsError && !bIsError) return -1;
-  if (!aIsError && bIsError) return 1;
+  if (aIsError && !bIsError) return 1;
+  if (!aIsError && bIsError) return -1;
   return a.node.word.localeCompare(b.node.word);
 }
 
@@ -903,13 +908,12 @@ function startPuzzle(mode, { force = false } = {}) {
   wordInput.focus();
 }
 
-function resetGame() {
-  if (state.puzzle.mode === 'practice') {
-    if (!confirm('Start a new random practice puzzle?')) return;
-    startPuzzle('practice', { force: true });
-    return;
-  }
+function startNewPracticePuzzle() {
+  if (!confirm('Start a new random practice puzzle?')) return;
+  startPuzzle('practice', { force: true });
+}
 
+function resetDailyBoard() {
   if (!confirm('Reset the board? Your progress will be lost.')) return;
   state.nodes
     .filter(n => n.type === 'bridge')
@@ -925,6 +929,14 @@ function resetGame() {
   setStatus('');
   const key = getProgressStorageKey();
   if (key) localStorage.removeItem(key);
+}
+
+function resetGame() {
+  if (state.puzzle.mode === 'practice') {
+    startNewPracticePuzzle();
+    return;
+  }
+  resetDailyBoard();
 }
 
 function undoLast() {
