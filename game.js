@@ -1271,7 +1271,9 @@ async function startPuzzle(mode, { force = false, gameId = null } = {}) {
 }
 
 function startNewPracticePuzzle() {
-  startPuzzle('practice');
+  const hasBridges = state.nodes.some(n => n.type === 'bridge');
+  if (hasBridges && !confirm('Start another practice puzzle? Your current board will be cleared.')) return;
+  startPuzzle('practice', { force: true });
 }
 
 function resetDailyBoard() {
