@@ -10,6 +10,8 @@ const CONFIG = {
   endX:   900, endY:   280,
   minSimilarity:    0.10,  // normalized [0,1] – weakest visible link
   pathSimilarity:   0.16,  // normalized – required to count as path edge
+  anchorMaxSimilarity: 0.08,
+  anchorPairCandidateCount: 12,
   maxBridgeWords:   25,
   dragClickSuppressMs: 180,
   simBadgeOffsetY: 26,
@@ -26,6 +28,13 @@ const CONFIG = {
   closenessCurveStrength: 2.2, // empirically tuned for observed Datamuse sims (~0.15-0.85) to spread the mid-range
   closenessDisplayMin: 5,      // keep non-zero scores away from hard 0%
   closenessDisplayMax: 95,     // keep non-perfect scores away from hard 100%
+  closenessDisplayFloor: 0.01,
+  displayDecimals: 2,
+  autoPlaceRadius: 118,
+  autoPlaceJitter: 32,
+  bubblePaddingBase: 70,
+  bubblePaddingPerChar: 4,
+  bubblePaddingCap: 126,
   shareUrl: 'https://freakpants.github.io/wordlink/',
 };
 
@@ -37,8 +46,7 @@ let state = {
   edges:     [],     // { from, to, similarity }
   won:       false,
   dragInfo:  null,   // { node, offsetX, offsetY }
-  placement: null,   // { x, y } – where next word will be placed
-  puzzle:    { mode: 'daily', key: todayKey(), gameId: null },
+  puzzle:    { mode: 'daily', key: todayKey(), gameId: null, loadToken: 0 },
   similarityView: { sourceId: null, scores: {}, token: 0 },
   suppressBubbleClickUntil: 0,
 };
@@ -50,10 +58,12 @@ const simDebugCache = {};
 // Related-words cache: word → [{word, score}]
 const relCache = {};
 
+const puzzlePairCache = {};
+
 // ─────────────────────────────────────────────────────────
 // DOM refs
 // ─────────────────────────────────────────────────────────
-let svg, bubblesEl, similarityOverlayEl, placementEl, wordInput, statusEl, similarityPanelEl, similarityListEl;
+let svg, bubblesEl, similarityOverlayEl, wordInput, statusEl, similarityPanelEl, similarityListEl;
 
 // ─────────────────────────────────────────────────────────
 // Utility helpers
@@ -85,24 +95,50 @@ function getPuzzleLabel(mode = state.puzzle.mode) {
 
 function getPracticeGameIdFromUrl() {
   const params = new URLSearchParams(window.location.search);
-  return normalizePracticeGameId(params.get('gid'));
+  const bareQuery = window.location.search.replace(/^\?/, '').trim();
+  const bareSearch = bareQuery && !bareQuery.includes('=') ? bareQuery : null;
+  const bareHash = window.location.hash.match(/^#(\d+)$/)?.[1] || null;
+  const barePath = window.location.pathname.match(/\/(\d+)\/?$/)?.[1] || null;
+  return normalizePracticeGameId(params.get('gid') || bareSearch || bareHash || barePath);
 }
 
 function syncPuzzleUrl() {
   const url = new URL(window.location.href);
   if (state.puzzle.mode === 'practice' && state.puzzle.gameId) {
-    url.searchParams.set('gid', state.puzzle.gameId);
+    url.search = `?${encodeURIComponent(state.puzzle.gameId)}`;
   } else {
-    url.searchParams.delete('gid');
+    url.search = '';
   }
+  url.hash = '';
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
 }
 
 function getPuzzleShareUrl() {
   if (state.puzzle.mode === 'practice' && state.puzzle.gameId) {
-    return `${CONFIG.shareUrl}?gid=${encodeURIComponent(state.puzzle.gameId)}`;
+    return `${CONFIG.shareUrl}?${encodeURIComponent(state.puzzle.gameId)}`;
   }
   return CONFIG.shareUrl;
+}
+
+function formatPercent(value) {
+  return `${Number(value).toFixed(CONFIG.displayDecimals)}%`;
+}
+
+function getVisibleLinkThresholdLabel() {
+  return formatPercent(CONFIG.minSimilarity * 100);
+}
+
+function getWinningLinkThresholdLabel() {
+  return formatPercent(CONFIG.pathSimilarity * 100);
+}
+
+function updateThresholdCopy() {
+  document.querySelectorAll('[data-link-threshold]').forEach(el => {
+    el.textContent = getVisibleLinkThresholdLabel();
+  });
+  document.querySelectorAll('[data-path-threshold]').forEach(el => {
+    el.textContent = getWinningLinkThresholdLabel();
+  });
 }
 
 function getSimilarityDisplayPercent(sourceWord, targetWord, sim) {
@@ -126,17 +162,17 @@ function getSimilarityDisplayPercent(sourceWord, targetWord, sim) {
   }
   const normalized = Math.max(0, Math.min(1, base));
   if (normalized >= CONFIG.closenessPerfectThreshold) return 100;
-  if (normalized <= 0.001) return 0;
+  if (normalized <= 0.001) return CONFIG.closenessDisplayFloor;
 
   // Apply tanh S-curve centered on 0.5: (normalized - 0.5) centers the curve,
   // tanh maps to [-1,1], then ( +1 ) / 2 maps back to [0,1]. Multiplying by
   // closenessCurveStrength controls steepness (higher = more mid-range spread,
   // lower = closer to linear), reducing bunching near 0/100.
   const curved = (Math.tanh((normalized - 0.5) * CONFIG.closenessCurveStrength) + 1) / 2;
-  return Math.round(
+  return Number((
     CONFIG.closenessDisplayMin +
     curved * (CONFIG.closenessDisplayMax - CONFIG.closenessDisplayMin)
-  );
+  ).toFixed(CONFIG.displayDecimals));
 }
 
 function setStatus(msg, cls) {
@@ -277,6 +313,7 @@ function removeNode(id) {
   } else {
     delete state.similarityView.scores[id];
   }
+  resolveBridgeCollisions();
   updateWordCount();
   rebuildEdges();
 }
@@ -288,6 +325,78 @@ function updateNodePosition(id, x, y) {
   node.y = Math.max(20,  Math.min(CONFIG.canvasH - 20, y));
   node.el.style.left = `${node.x}px`;
   node.el.style.top  = `${node.y}px`;
+}
+
+function getNodePadding(node) {
+  return Math.min(
+    CONFIG.bubblePaddingCap,
+    CONFIG.bubblePaddingBase + node.word.length * CONFIG.bubblePaddingPerChar
+  );
+}
+
+function resolveBridgeCollisions({ lockedIds = new Set(), iterations = 16 } = {}) {
+  if (!state.nodes.some(n => n.type === 'bridge')) return;
+
+  for (let iter = 0; iter < iterations; iter++) {
+    let moved = false;
+    for (let i = 0; i < state.nodes.length; i++) {
+      for (let j = i + 1; j < state.nodes.length; j++) {
+        const a = state.nodes[i];
+        const b = state.nodes[j];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const distance = Math.hypot(dx, dy) || 0.001;
+        const minDistance = (getNodePadding(a) + getNodePadding(b)) / 2;
+        if (distance >= minDistance) continue;
+
+        const overlap = (minDistance - distance) / 2;
+        const ux = dx / distance;
+        const uy = dy / distance;
+        const aLocked = a.type !== 'bridge' || lockedIds.has(a.id);
+        const bLocked = b.type !== 'bridge' || lockedIds.has(b.id);
+
+        if (!aLocked) {
+          updateNodePosition(a.id, a.x - ux * overlap, a.y - uy * overlap);
+          moved = true;
+        }
+        if (!bLocked) {
+          updateNodePosition(b.id, b.x + ux * overlap, b.y + uy * overlap);
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+}
+
+function getAutoPlacement(word) {
+  const scored = state.nodes
+    .map(node => ({
+      node,
+      similarity: simCache[simCacheKey(word, node.word)] ?? 0,
+    }))
+    .sort((a, b) => b.similarity - a.similarity || a.node.word.localeCompare(b.node.word));
+
+  const primary = scored[0]?.node || { x: CONFIG.canvasW / 2, y: CONFIG.canvasH / 2 };
+  const secondary = scored[1]?.node || { x: CONFIG.canvasW / 2, y: CONFIG.canvasH / 2 };
+  let dx = primary.x - secondary.x;
+  let dy = primary.y - secondary.y;
+  if (Math.abs(dx) < 4 && Math.abs(dy) < 4) {
+    const seed = word.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), state.nodes.length);
+    const angle = (seed % 360) * (Math.PI / 180);
+    dx = Math.cos(angle);
+    dy = Math.sin(angle);
+  }
+  const length = Math.hypot(dx, dy) || 1;
+  const jitterSeed = word.length + state.nodes.length;
+  const angleOffset = ((jitterSeed % 9) - 4) * 0.12;
+  const baseAngle = Math.atan2(dy, dx) + angleOffset;
+  const radius = CONFIG.autoPlaceRadius + ((jitterSeed % 5) - 2) * (CONFIG.autoPlaceJitter / 2);
+
+  return {
+    x: Math.max(30, Math.min(CONFIG.canvasW - 30, primary.x + Math.cos(baseAngle) * radius)),
+    y: Math.max(20, Math.min(CONFIG.canvasH - 20, primary.y + Math.sin(baseAngle) * radius)),
+  };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -353,7 +462,7 @@ function renderSimilarityPanel(source) {
 
   document.getElementById('similarity-panel-title').textContent = `Closeness to "${source.word}"`;
   document.getElementById('similarity-panel-subtitle').textContent =
-    'Sorted from closest to furthest on a normalized 0-100 closeness scale.';
+    `Sorted from closest to furthest on a two-decimal 0-100 closeness scale. Visible links start at ${getVisibleLinkThresholdLabel()}.`;
 
   const entries = state.nodes
     .filter(n => n.id !== source.id)
@@ -379,7 +488,7 @@ function renderSimilarityPanel(source) {
     const score = document.createElement('span');
     score.className = 'similarity-score';
     if (percent !== null) {
-      score.textContent = `${percent}%`;
+      score.textContent = formatPercent(percent);
     } else if (sim === null) {
       score.textContent = 'N/A';
     } else {
@@ -518,6 +627,7 @@ function checkVictory() {
   shareBtn.dataset.shareText = shareText;
 
   saveProgress(true);
+  setStatus(`Path found. Gray links needed ${getVisibleLinkThresholdLabel()}+, and your winning chain hit ${getWinningLinkThresholdLabel()}+.`, 'success');
 
   // Show modal after a short pause so the path highlight is visible
   setTimeout(() => {
@@ -554,33 +664,39 @@ async function addWord() {
     return;
   }
 
-  wordInput.value = '';
-  setStatus('');
-
-  // Determine placement coordinates
-  const px = state.placement ? state.placement.x : CONFIG.canvasW / 2 + (Math.random() - 0.5) * 80;
-  const py = state.placement ? state.placement.y : CONFIG.canvasH / 2 + (Math.random() - 0.5) * 80;
-  clearPlacement();
-
-  const node = createNode(word, px, py, 'bridge');
-  node.el.classList.add('loading');
   setStatus(`Checking "${word}"…`);
-  updateWordCount();
+  wordInput.value = '';
 
   try {
-    // Fetch related words for this new word
     await fetchRelated(word);
+  } catch (_) {
+    wordInput.value = raw;
+    setStatus(`"${word}" was not found by Datamuse. Try a standard dictionary word.`, 'error');
+    shakeInput();
+    wordInput.focus();
+    wordInput.select();
+    return;
+  }
 
-    // Check similarity with every existing node
-    const others = state.nodes.filter(n => n.id !== node.id);
-    await Promise.all(others.map(other => getSimilarity(word, other.word)));
+  const others = [...state.nodes];
+  let similarityFailed = false;
+  await Promise.all(others.map(async other => {
+    try {
+      await getSimilarity(word, other.word);
+    } catch (_) {
+      similarityFailed = true;
+    }
+  }));
 
-    node.el.classList.remove('loading');
-    setStatus('');
-  } catch (err) {
-    node.el.classList.remove('loading');
-    node.el.classList.add('error');
-    setStatus(`Could not check "${word}". Drag it close to another word – connections will update.`, 'error');
+  const { x, y } = getAutoPlacement(word);
+  const node = createNode(word, x, y, 'bridge');
+  resolveBridgeCollisions();
+  updateWordCount();
+
+  if (similarityFailed) {
+    setStatus(`Added "${word}", but some closeness checks are still missing.`, 'error');
+  } else {
+    setStatus(`Added "${word}". Gray bubbles are bridge words; links appear at ${getVisibleLinkThresholdLabel()}+.`, 'success');
   }
 
   rebuildEdges();
@@ -629,8 +745,11 @@ function onDocMouseMove(e) {
 
 function onDocMouseUp() {
   if (!state.dragInfo) return;
+  const draggedId = state.dragInfo.id;
   if (state.dragInfo.moved) {
     state.suppressBubbleClickUntil = performance.now() + CONFIG.dragClickSuppressMs;
+    resolveBridgeCollisions({ lockedIds: new Set([draggedId]) });
+    rebuildEdges();
   }
   state.dragInfo = null;
   saveProgress(false);
@@ -663,35 +782,25 @@ function onDocTouchMove(e) {
 
 function onDocTouchEnd() {
   if (!state.dragInfo) return;
+  const draggedId = state.dragInfo.id;
   if (state.dragInfo.moved) {
     state.suppressBubbleClickUntil = performance.now() + CONFIG.dragClickSuppressMs;
+    resolveBridgeCollisions({ lockedIds: new Set([draggedId]) });
+    rebuildEdges();
   }
   state.dragInfo = null;
   saveProgress(false);
 }
 
 // ─────────────────────────────────────────────────────────
-// Canvas click → set placement indicator
+// Canvas click
 // ─────────────────────────────────────────────────────────
 function onCanvasClick(e) {
   if (state.won) return;
-  // Ignore if clicking on a bubble
   if (e.target.classList.contains('word-bubble')) return;
   clearSimilarityView(false);
-  const rect = e.currentTarget.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  state.placement = { x, y };
-  placementEl.style.left  = `${x}px`;
-  placementEl.style.top   = `${y}px`;
-  placementEl.classList.remove('hidden');
   wordInput.focus();
-  setStatus('Placement set – now type a word and press Enter.');
-}
-
-function clearPlacement() {
-  state.placement = null;
-  placementEl.classList.add('hidden');
+  setStatus(`WordLink places new bridge words automatically. Gray links appear at ${getVisibleLinkThresholdLabel()}+, and a win needs ${getWinningLinkThresholdLabel()}+.`);
 }
 
 function onBubbleClick(e, id) {
@@ -728,7 +837,7 @@ async function toggleSimilarityViewForNode(id) {
   await refreshSimilarityView();
 
   if (state.similarityView.sourceId === id) {
-    setStatus(`Showing closeness scores for "${node.word}" (click it again to clear).`);
+    setStatus(`Showing closeness scores for "${node.word}" with two-decimal precision (click it again to clear).`);
   }
 }
 
@@ -804,7 +913,7 @@ function renderSimilarityView() {
     } else if (sim === undefined) {
       badge.textContent = '…';
     } else {
-      badge.textContent = `${getSimilarityDisplayPercent(source.word, n.word, sim)}%`;
+      badge.textContent = formatPercent(getSimilarityDisplayPercent(source.word, n.word, sim));
     }
     badge.style.left = `${n.x}px`;
     badge.style.top = `${getSimilarityBadgeTop(n.y)}px`;
@@ -894,17 +1003,48 @@ function clearBoard() {
   state.edges = [];
   state.won = false;
   state.dragInfo = null;
-  state.placement = null;
   wordInput.value = '';
   clearSimilarityView(false);
   svg.innerHTML = '';
-  placementEl.classList.add('hidden');
   document.getElementById('victory-modal').classList.add('hidden');
   updateWordCount();
   setStatus('');
 }
 
-function startPuzzle(mode, { force = false, gameId = null } = {}) {
+async function isPlayableAnchorPair(startWord, endWord) {
+  try {
+    await Promise.all([
+      fetchRelated(startWord),
+      fetchRelated(endWord),
+    ]);
+    const similarity = await getSimilarity(startWord, endWord);
+    return similarity < CONFIG.anchorMaxSimilarity;
+  } catch (_) {
+    return true;
+  }
+}
+
+async function chooseAnchorPair(mode, gameId) {
+  const cacheKey = mode === 'daily' ? todayKey() : `practice-${gameId}`;
+  if (puzzlePairCache[cacheKey]) return puzzlePairCache[cacheKey];
+
+  const fallback = mode === 'daily' ? getDailyPair() : getPracticePair(gameId);
+  const candidates = mode === 'daily'
+    ? getDailyPairCandidatesForDate(new Date(), CONFIG.anchorPairCandidateCount)
+    : getPracticePairCandidates(gameId, CONFIG.anchorPairCandidateCount);
+
+  for (const pair of candidates) {
+    if (await isPlayableAnchorPair(pair[0], pair[1])) {
+      puzzlePairCache[cacheKey] = pair;
+      return pair;
+    }
+  }
+
+  puzzlePairCache[cacheKey] = fallback;
+  return fallback;
+}
+
+async function startPuzzle(mode, { force = false, gameId = null } = {}) {
   const hasBridges = state.nodes.some(n => n.type === 'bridge');
   if (!force && hasBridges) {
     const puzzleLabel = mode === 'daily' ? 'today’s daily puzzle' : 'a past daily puzzle';
@@ -920,23 +1060,37 @@ function startPuzzle(mode, { force = false, gameId = null } = {}) {
     mode,
     key: mode === 'daily' ? todayKey() : `practice-day-${practiceGameId}`,
     gameId: practiceGameId,
+    loadToken: state.puzzle.loadToken + 1,
   };
+  const loadToken = state.puzzle.loadToken;
 
-  const [startWord, endWord] = mode === 'daily' ? getDailyPair() : getPracticePair(practiceGameId);
-  document.getElementById('word-start').textContent = startWord;
-  document.getElementById('word-end').textContent = endWord;
+  document.getElementById('word-start').textContent = '…';
+  document.getElementById('word-end').textContent = '…';
   document.getElementById('puzzle-number').textContent = getPuzzleLabel(mode);
   setPuzzleModeButtons();
   syncPuzzleUrl();
+  updateBestScore();
+  setStatus('Finding a fair anchor pair…');
+
+  const [startWord, endWord] = await chooseAnchorPair(mode, practiceGameId);
+  if (state.puzzle.loadToken !== loadToken) return;
+
+  document.getElementById('word-start').textContent = startWord;
+  document.getElementById('word-end').textContent = endWord;
+  document.getElementById('puzzle-number').textContent = getPuzzleLabel(mode);
 
   createNode(startWord, CONFIG.startX, CONFIG.startY, 'start');
   createNode(endWord, CONFIG.endX, CONFIG.endY, 'end');
 
-  fetchRelated(startWord).catch(() => {});
-  fetchRelated(endWord).catch(() => {});
+  await Promise.all([
+    fetchRelated(startWord).catch(() => []),
+    fetchRelated(endWord).catch(() => []),
+    getSimilarity(startWord, endWord).catch(() => null),
+  ]);
 
-  updateBestScore();
+  rebuildEdges();
   loadProgress();
+  setStatus(`Gray bubbles are your bridge words. Gray links appear at ${getVisibleLinkThresholdLabel()}+, and a win needs ${getWinningLinkThresholdLabel()}+ links.`);
   wordInput.focus();
 }
 
@@ -953,10 +1107,8 @@ function resetDailyBoard() {
   state.nodes = state.nodes.filter(n => n.type !== 'bridge');
   state.edges = [];
   state.won = false;
-  state.placement = null;
   clearSimilarityView(false);
   svg.innerHTML = '';
-  placementEl.classList.add('hidden');
   updateWordCount();
   setStatus('');
   const key = getProgressStorageKey();
@@ -986,11 +1138,11 @@ function init() {
   svg        = document.getElementById('connections-svg');
   bubblesEl  = document.getElementById('bubbles-container');
   similarityOverlayEl = document.getElementById('similarity-overlay');
-  placementEl = document.getElementById('placement-indicator');
   wordInput  = document.getElementById('word-input');
   statusEl   = document.getElementById('status-message');
   similarityPanelEl = document.getElementById('similarity-panel');
   similarityListEl = document.getElementById('similarity-list');
+  updateThresholdCopy();
 
   // Size the SVG
   svg.setAttribute('width',  CONFIG.canvasW);

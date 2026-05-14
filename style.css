@@ -206,7 +206,7 @@ header h1 span {
   /* dot-grid background */
   background-image: radial-gradient(circle, #30363d 1px, transparent 1px);
   background-size: 28px 28px;
-  cursor: crosshair;
+  cursor: default;
   overflow: hidden;
 }
 
@@ -363,24 +363,6 @@ header h1 span {
   white-space: nowrap;
 }
 
-/* ── Placement Indicator ──────────────────────────────── */
-#placement-indicator {
-  position: absolute;
-  width: 20px; height: 20px;
-  border-radius: 50%;
-  border: 2px dashed var(--blue-light);
-  background: rgba(37,99,235,0.15);
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-  animation: ping 1.4s ease-in-out infinite;
-}
-
-@keyframes ping {
-  0%   { transform: translate(-50%,-50%) scale(1);   opacity: 1; }
-  70%  { transform: translate(-50%,-50%) scale(1.7); opacity: 0.4; }
-  100% { transform: translate(-50%,-50%) scale(1);   opacity: 1; }
-}
-
 .hidden { display: none !important; }
 
 /* ── Canvas hint ──────────────────────────────────────── */
@@ -390,6 +372,48 @@ header h1 span {
   max-width: 1000px;
   width: 100%;
   text-align: center;
+}
+
+#link-legend {
+  width: 100%;
+  max-width: 1000px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 16px;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legend-swatch {
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+.legend-swatch.gray-bubble {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--gray-bubble);
+  border: 1px solid var(--gray-border);
+}
+
+.legend-swatch.gray-line,
+.legend-swatch.amber-line {
+  width: 22px;
+  height: 0;
+  border-top: 3px solid #94a3b8;
+  border-radius: 999px;
+}
+
+.legend-swatch.amber-line {
+  border-top-color: var(--amber-light);
 }
 
 #similarity-panel {

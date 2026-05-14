@@ -51,18 +51,22 @@
         <svg id="connections-svg" aria-hidden="true"></svg>
         <div id="bubbles-container"></div>
         <div id="similarity-overlay" aria-hidden="true"></div>
-        <div id="placement-indicator" class="hidden" aria-hidden="true"></div>
       </div>
     </div>
 
     <!-- ── Help hint ──────────────────────────────────────── -->
-    <p id="canvas-hint">Click the canvas to pick a placement spot. Click any word bubble to inspect 0-100% closeness.</p>
+    <p id="canvas-hint">Type a word and WordLink will place it for you. Click any bubble to inspect two-decimal closeness scores.</p>
+    <div id="link-legend" aria-label="Link legend">
+      <span class="legend-item"><span class="legend-swatch gray-bubble" aria-hidden="true"></span>Gray bubble = your bridge word</span>
+      <span class="legend-item"><span class="legend-swatch gray-line" aria-hidden="true"></span>Gray link = ordinary connection at <strong data-link-threshold>10.00%</strong>+</span>
+      <span class="legend-item"><span class="legend-swatch amber-line" aria-hidden="true"></span>Amber link = winning chain at <strong data-path-threshold>16.00%</strong>+</span>
+    </div>
 
     <section id="similarity-panel" class="hidden" aria-live="polite">
       <div class="similarity-panel-header">
         <div>
           <h2 id="similarity-panel-title">Closeness scores</h2>
-          <p id="similarity-panel-subtitle">0% = loosely related, 100% = nearly identical.</p>
+          <p id="similarity-panel-subtitle">0.00% = loosely related, 100.00% = nearly identical.</p>
         </div>
       </div>
       <div id="similarity-list"></div>
@@ -116,14 +120,15 @@
       <h2 id="help-title">How to Play</h2>
       <ol>
         <li>Each day you get two <strong>anchor words</strong> (shown in blue and red) placed on the canvas.</li>
-        <li><strong>Click</strong> the canvas to pick where your next word will appear.</li>
-        <li><strong>Type</strong> a word and press <kbd>Enter</kbd> or click <strong>Add</strong>.</li>
-        <li>Two words <strong>connect</strong> when they are semantically similar enough.</li>
-        <li>Click any bubble to see how close it is to every other word on a clearer 0-100% scale.</li>
+        <li><strong>Type</strong> a bridge word and WordLink will place it automatically.</li>
+        <li>Press <kbd>Enter</kbd> or click <strong>Add</strong> to submit it.</li>
+        <li>Gray bubbles are your bridge words. Gray links appear at <strong data-link-threshold>10.00%</strong>+ similarity.</li>
+        <li>Amber links mark the winning chain, and every edge in that chain must hit <strong data-path-threshold>16.00%</strong>+.</li>
+        <li>Click any bubble to see how close it is to every other word on a clearer 0-100% scale with two decimals.</li>
         <li>Build a chain of connected words from the blue word to the red word.</li>
         <li>Your score = number of bridge words used. <strong>Fewer is better!</strong></li>
       </ol>
-      <p class="tip">💡 Drag any bridge word to reposition it and form new connections. Use <strong>Practice</strong> to replay past daily puzzles.</p>
+      <p class="tip">💡 Drag any bridge word to reposition it and form new connections. Practice links use a bare puzzle number in the URL for easy sharing.</p>
       <button id="close-help-btn" class="primary-btn">Got it!</button>
     </div>
   </div>
