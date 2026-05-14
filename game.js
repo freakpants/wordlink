@@ -25,7 +25,7 @@ const CONFIG = {
   closenessNeighborhoodWeight: 0.35,
   closenessEdgeWeight: 0.10,
   closenessPerfectThreshold: 0.999,
-  // Treat the lowest ~2% of normalized scores as a dedicated low-end band so
+  // Treat the lowest 2% of normalized scores as a dedicated low-end band so
   // tiny-but-nonzero values are spread instead of collapsing at 0.01%.
   closenessFloorEpsilon: 0.02,
   closenessCurveStrength: 2.2, // empirically tuned for observed Datamuse sims (~0.15-0.85) to spread the mid-range
