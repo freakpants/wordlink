@@ -38,7 +38,8 @@ const CURATED_WORDS = [
   'harvest', 'flight', 'birth', 'death', 'sleep',
 ];
 
-// Broad English dictionary sample so practice mode has a deep word pool.
+// Broad English dictionary sample (2,500 filtered entries from a larger
+// frequency list) so practice mode has a deep but bounded word pool.
 const DICTIONARY_WORDS = [
   'living', 'major', 'media', 'phone', 'players', 'behind', 'building', 'easy',
   'gonna', 'near', 'plan', 'political', 'quite', 'talking', 'works', 'according',
