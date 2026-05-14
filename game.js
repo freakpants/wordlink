@@ -1147,6 +1147,17 @@ async function restoreSimilarities(words) {
 function setPuzzleModeButtons() {
   document.getElementById('daily-mode-btn').classList.toggle('is-active', state.puzzle.mode === 'daily');
   document.getElementById('practice-mode-btn').classList.toggle('is-active', state.puzzle.mode === 'practice');
+  updateResetButton();
+}
+
+function updateResetButton() {
+  const resetBtn = document.getElementById('reset-btn');
+  if (!resetBtn) return;
+  const isPractice = state.puzzle.mode === 'practice';
+  resetBtn.textContent = isPractice ? 'New Practice Round' : 'Reset';
+  resetBtn.classList.toggle('primary-btn', isPractice);
+  resetBtn.classList.toggle('secondary-btn', !isPractice);
+  resetBtn.setAttribute('aria-label', isPractice ? 'Start a new practice round' : 'Reset the current board');
 }
 
 function clearBoard() {
@@ -1252,7 +1263,8 @@ async function startPuzzle(mode, { force = false, gameId = null } = {}) {
 }
 
 function startNewPracticePuzzle() {
-  if (!confirm('Start another practice puzzle from a past daily?')) return;
+  const hasBridges = state.nodes.some(n => n.type === 'bridge');
+  if (hasBridges && !confirm('Start another practice puzzle? Your current board will be cleared.')) return;
   startPuzzle('practice', { force: true });
 }
 
