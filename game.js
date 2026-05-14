@@ -45,7 +45,7 @@ let state = {
   nodes:     [],     // { id, word, x, y, type:'start'|'end'|'bridge', el }
   edges:     [],     // { from, to, similarity }
   won:       false,
-  dragInfo:  null,   // { node, offsetX, offsetY }
+  dragInfo:  null,   // { nodeId, offsetX, offsetY, startX, startY, moved }
   puzzle:    { mode: 'daily', key: todayKey(), gameId: null, loadToken: 0 },
   similarityView: { sourceId: null, scores: {}, token: 0 },
   suppressBubbleClickUntil: 0,
@@ -720,7 +720,7 @@ function startDrag(clientX, clientY, id) {
   const node = state.nodes.find(n => n.id === id);
   if (!node || node.type !== 'bridge') return;
   state.dragInfo = {
-    id,
+    nodeId: id,
     offsetX: clientX - canvasRect.left - node.x,
     offsetY: clientY - canvasRect.top  - node.y,
     startX: clientX,
@@ -739,13 +739,13 @@ function onDocMouseMove(e) {
   const canvasRect = document.getElementById('game-canvas').getBoundingClientRect();
   const x = e.clientX - canvasRect.left - state.dragInfo.offsetX;
   const y = e.clientY - canvasRect.top  - state.dragInfo.offsetY;
-  updateNodePosition(state.dragInfo.id, x, y);
+  updateNodePosition(state.dragInfo.nodeId, x, y);
   rebuildEdges();
 }
 
 function onDocMouseUp() {
   if (!state.dragInfo) return;
-  const draggedId = state.dragInfo.id;
+  const draggedId = state.dragInfo.nodeId;
   if (state.dragInfo.moved) {
     state.suppressBubbleClickUntil = performance.now() + CONFIG.dragClickSuppressMs;
     resolveBridgeCollisions({ lockedIds: new Set([draggedId]) });
@@ -776,13 +776,13 @@ function onDocTouchMove(e) {
   const canvasRect = document.getElementById('game-canvas').getBoundingClientRect();
   const x = e.touches[0].clientX - canvasRect.left - state.dragInfo.offsetX;
   const y = e.touches[0].clientY - canvasRect.top  - state.dragInfo.offsetY;
-  updateNodePosition(state.dragInfo.id, x, y);
+  updateNodePosition(state.dragInfo.nodeId, x, y);
   rebuildEdges();
 }
 
 function onDocTouchEnd() {
   if (!state.dragInfo) return;
-  const draggedId = state.dragInfo.id;
+  const draggedId = state.dragInfo.nodeId;
   if (state.dragInfo.moved) {
     state.suppressBubbleClickUntil = performance.now() + CONFIG.dragClickSuppressMs;
     resolveBridgeCollisions({ lockedIds: new Set([draggedId]) });
