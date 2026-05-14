@@ -91,10 +91,30 @@ function getSimilarityBadgeTop(y) {
 async function fetchRelated(word) {
   const key = word.toLowerCase();
   if (relCache[key]) return relCache[key];
-  const url = `https://api.datamuse.com/words?ml=${encodeURIComponent(key)}&max=300`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('Datamuse fetch failed');
-  const data = await res.json();
+  const enc = encodeURIComponent(key);
+
+  // Query both "means like" (synonyms/paraphrases) and "triggered by"
+  // (associative/thematic relations) for richer coverage.
+  const [mlData, trgData] = await Promise.all([
+    fetch(`https://api.datamuse.com/words?ml=${enc}&max=300`)
+      .then(r => r.ok ? r.json() : []).catch(() => []),
+    fetch(`https://api.datamuse.com/words?rel_trg=${enc}&max=300`)
+      .then(r => r.ok ? r.json() : []).catch(() => []),
+  ]);
+
+  if (!mlData.length && !trgData.length) throw new Error('No related words returned from Datamuse');
+
+  // Merge both lists, keeping the highest score per word; normalise to lowercase.
+  const merged = new Map();
+  [...mlData, ...trgData].forEach(({ word: w, score }) => {
+    const wl = w.toLowerCase();
+    if (!merged.has(wl) || merged.get(wl) < score) merged.set(wl, score);
+  });
+
+  const data = [...merged.entries()]
+    .map(([w, score]) => ({ word: w, score }))
+    .sort((a, b) => b.score - a.score);
+
   relCache[key] = data;
   return data;
 }
@@ -110,15 +130,30 @@ async function getSimilarity(w1, w2) {
 
   const lo1 = w2.toLowerCase();
   const lo2 = w1.toLowerCase();
-  const m1 = rel1.find(r => r.word.toLowerCase() === lo1);
-  const m2 = rel2.find(r => r.word.toLowerCase() === lo2);
 
-  const s1 = m1 ? m1.score : 0;
-  const s2 = m2 ? m2.score : 0;
-  const best = Math.max(s1, s2);
+  // Direct-match score: does each word appear in the other's related list?
+  const m1 = rel1.find(r => r.word === lo1);
+  const m2 = rel2.find(r => r.word === lo2);
+  const directBest = Math.max(m1 ? m1.score : 0, m2 ? m2.score : 0);
+  // Datamuse scores peak around 5000 for close synonyms; normalize to [0,1].
+  const directNorm = Math.min(1, directBest / 5000);
 
-  // Datamuse scores go up to ~3500 for near-synonyms; normalize to [0,1]
-  const norm = Math.min(1, best / 2000);
+  // Shared-neighbours (Jaccard) on the top-200 results from each word.
+  // Two words that share many neighbours are conceptually close even when
+  // they are not synonyms (e.g. "water" and "mountain" both relate to
+  // "river", "lake", "snow", etc.).
+  const N = 200;
+  const set1 = new Set(rel1.slice(0, N).map(r => r.word));
+  const set2 = new Set(rel2.slice(0, N).map(r => r.word));
+  let shared = 0;
+  for (const w of set1) { if (set2.has(w)) shared++; }
+  const union = set1.size + set2.size - shared;
+  const jaccard = union > 0 ? shared / union : 0;
+  // Multiply by 5 so a jaccard of 0.10 (10 % shared neighbours) maps to
+  // a similarity of 0.50, and 0.20 saturates at 1.0.
+  const sharedNorm = Math.min(1, jaccard * 5);
+
+  const norm = Math.max(directNorm, sharedNorm);
   simCache[key] = norm;
   return norm;
 }
