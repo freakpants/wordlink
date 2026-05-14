@@ -96,7 +96,7 @@ function getPuzzleLabel(mode = state.puzzle.mode) {
 
 function getPuzzleDateLabel(mode = state.puzzle.mode) {
   if (mode === 'daily') {
-    const d = new Date();
+    const d = getDateFromPuzzleNumber(getPuzzleNumber());
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
   if (state.puzzle.gameId) {
