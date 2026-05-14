@@ -381,7 +381,7 @@ async function addWord() {
   }
 
   rebuildEdges();
-  void refreshSimilarityView();
+  refreshSimilarityView();
   saveProgress(false);
   wordInput.focus();
 }
@@ -499,7 +499,7 @@ function onBubbleClick(e, id) {
     state.suppressBubbleClick = false;
     return;
   }
-  void toggleSimilarityViewForNode(id);
+  toggleSimilarityViewForNode(id);
 }
 
 function clearSimilarityView(clearStatus = true) {

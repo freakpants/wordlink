@@ -71,7 +71,7 @@ const WORD_PAIRS = [
   ['meteor', 'orchard'],
   ['quill', 'microchip'],
   ['meadow', 'citadel'],
-  ['avalanche', 'lantern'],
+  ['avalanche', 'temple'],
   ['coral', 'observatory'],
 ];
 
