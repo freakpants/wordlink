@@ -356,10 +356,11 @@ function removeNode(id) {
 function updateNodePosition(id, x, y) {
   const node = state.nodes.find(n => n.id === id);
   if (!node) return;
-  const halfW = (node.el?.offsetWidth || 72) / 2;
-  const halfH = (node.el?.offsetHeight || 32) / 2;
-  const marginX = Math.max(30, halfW + 8);
-  const marginY = Math.max(20, halfH + 8);
+  const measuredW = node.el?.offsetWidth || 0;
+  const measuredH = node.el?.offsetHeight || 0;
+  const estimatedMargins = getEstimatedBubbleMargins(node.word, node.type);
+  const marginX = measuredW > 1 ? Math.max(30, measuredW / 2 + 8) : estimatedMargins.marginX;
+  const marginY = measuredH > 1 ? Math.max(20, measuredH / 2 + 8) : estimatedMargins.marginY;
   node.x = Math.max(marginX, Math.min(CONFIG.canvasW - marginX, x));
   node.y = Math.max(marginY, Math.min(CONFIG.canvasH - marginY, y));
   node.el.style.left = `${node.x}px`;
@@ -942,7 +943,7 @@ function focusSimilarityOnNode(id) {
   });
   state.similarityView.token++;
   renderSimilarityView();
-  void refreshSimilarityView();
+  refreshSimilarityView();
 }
 
 function renderSimilarityView() {
