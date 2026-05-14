@@ -108,7 +108,11 @@ function getSimilarityDisplayPercent(sourceWord, targetWord, sim) {
   if (dbg) {
     // Display score is intentionally decoupled from edge thresholds so it reads
     // as a clearer 0-100 value instead of saturating too easily.
+    // 0.35 means ~35% neighbour-overlap maps to a full neighborhood signal.
     const neighborhood = Math.min(1, dbg.rawJaccard / 0.35);
+    // We bias the display toward direct synonym strength (55%), keep
+    // neighborhood overlap as a strong secondary signal (35%), and retain a
+    // small contribution from the gameplay edge score (10%) for continuity.
     base = Math.min(1, dbg.directNorm * 0.55 + neighborhood * 0.35 + sim * 0.10);
   }
   const percent = Math.round(Math.max(0, Math.min(1, base)) * 100);
