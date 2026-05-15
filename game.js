@@ -19,16 +19,15 @@ const CONFIG = {
   simAlphaLoading: 0.25,
   simAlphaError: 0.2,
   simAlphaScale: 0.7,
-  closenessNeighborhoodSaturation: 0.35,
-  closenessDirectWeight: 0.55,
-  closenessNeighborhoodWeight: 0.35,
-  closenessEdgeWeight: 0.10,
+  semanticDirectScoreScale: 4000,
+  semanticNeighborLimit: 140,
+  associativeNeighborLimit: 80,
+  similarityDirectWeight: 0.58,
+  similaritySemanticWeight: 0.30,
+  similarityAssociativeWeight: 0.12,
   closenessPerfectThreshold: 0.999,
-  // Treat the lowest 2% of normalized scores as a dedicated low-end band so
-  // tiny-but-nonzero values are spread instead of collapsing at 0.01%.
-  closenessFloorEpsilon: 0.02,
-  closenessCurveStrength: 2.2, // empirically tuned for observed Datamuse sims (~0.15-0.85) to spread the mid-range
-  closenessDisplayMin: 5,      // keep non-zero scores away from hard 0%
+  // Preserve tiny-but-nonzero similarities as a visible floor without
+  // compressing the rest of the scale into a few narrow display bands.
   closenessDisplayMax: 95,     // keep non-perfect scores away from hard 100%
   closenessDisplayFloor: 0.01,
   displayDecimals: 2,
@@ -63,9 +62,7 @@ let state = {
 
 // Similarity cache: "word1:word2" → score 0‒1
 const simCache = {};
-// Debug cache: "word1:word2" → { directNorm, rawJaccard }
-const simDebugCache = {};
-// Related-words cache: word → [{word, score}]
+// Related-words cache: word → { semantic, associative, semanticMap }
 const relCache = {};
 
 const puzzlePairCache = {};
@@ -165,46 +162,19 @@ function updateThresholdCopy() {
   });
 }
 
-function getSimilarityDisplayPercent(sourceWord, targetWord, sim) {
+function getSimilarityDisplayPercent(_sourceWord, _targetWord, sim) {
   if (sim === null || sim === undefined) return null;
-  const dbg = simDebugCache[simCacheKey(sourceWord, targetWord)];
-  let base = sim;
-  if (dbg) {
-    // Display score is intentionally decoupled from edge thresholds so it reads
-    // as a clearer 0-100 value instead of saturating too easily.
-    // ~35% neighbor-overlap maps to a full neighborhood signal.
-    const neighborhood = Math.min(1, dbg.rawJaccard / CONFIG.closenessNeighborhoodSaturation);
-    // We bias the display toward direct synonym strength (55%), keep
-    // neighborhood overlap as a strong secondary signal (35%), and retain a
-    // small contribution from the gameplay edge score (10%) for continuity.
-    base = Math.min(
-      1,
-      dbg.directNorm * CONFIG.closenessDirectWeight +
-      neighborhood * CONFIG.closenessNeighborhoodWeight +
-      sim * CONFIG.closenessEdgeWeight
-    );
-  }
-  const normalized = Math.max(0, Math.min(1, base));
+  const normalized = Math.max(0, Math.min(1, sim));
   if (normalized >= CONFIG.closenessPerfectThreshold) return 100;
-  if (normalized <= CONFIG.closenessFloorEpsilon) {
-    const lowEndRatio = CONFIG.closenessFloorEpsilon > 0
-      ? normalized / CONFIG.closenessFloorEpsilon
-      : 0;
-    return Number((
-      CONFIG.closenessDisplayFloor +
-      lowEndRatio * (CONFIG.closenessDisplayMin - CONFIG.closenessDisplayFloor)
-    ).toFixed(CONFIG.displayDecimals));
+  if (normalized <= 0) return 0;
+  const percent = normalized * 100;
+  if (percent < CONFIG.closenessDisplayFloor) {
+    return Number(CONFIG.closenessDisplayFloor.toFixed(CONFIG.displayDecimals));
   }
-
-  // Apply tanh S-curve centered on 0.5: (normalized - 0.5) centers the curve,
-  // tanh maps to [-1,1], then ( +1 ) / 2 maps back to [0,1]. Multiplying by
-  // closenessCurveStrength controls steepness (higher = more mid-range spread,
-  // lower = closer to linear), reducing bunching near 0/100.
-  const curved = (Math.tanh((normalized - 0.5) * CONFIG.closenessCurveStrength) + 1) / 2;
-  return Number((
-    CONFIG.closenessDisplayMin +
-    curved * (CONFIG.closenessDisplayMax - CONFIG.closenessDisplayMin)
-  ).toFixed(CONFIG.displayDecimals));
+  if (percent >= CONFIG.closenessDisplayMax) {
+    return Number(CONFIG.closenessDisplayMax.toFixed(CONFIG.displayDecimals));
+  }
+  return Number(percent.toFixed(CONFIG.displayDecimals));
 }
 
 function setStatus(msg, cls) {
@@ -251,19 +221,53 @@ async function fetchRelated(word) {
 
   if (!mlData.length && !trgData.length) throw new Error('No related words returned from Datamuse');
 
-  // Merge both lists, keeping the highest score per word; normalise to lowercase.
-  const merged = new Map();
-  [...mlData, ...trgData].forEach(({ word: w, score }) => {
-    const wl = w.toLowerCase();
-    if (!merged.has(wl) || merged.get(wl) < score) merged.set(wl, score);
-  });
+  const normalizeEntries = entries => {
+    const merged = new Map();
+    entries.forEach(({ word: w, score }) => {
+      const wl = w?.toLowerCase();
+      if (!wl) return;
+      if (!merged.has(wl) || merged.get(wl) < score) merged.set(wl, score);
+    });
+    return [...merged.entries()]
+      .map(([w, score]) => ({ word: w, score }))
+      .sort((a, b) => b.score - a.score);
+  };
 
-  const data = [...merged.entries()]
-    .map(([w, score]) => ({ word: w, score }))
-    .sort((a, b) => b.score - a.score);
+  const semantic = normalizeEntries(mlData);
+  const associative = normalizeEntries(trgData);
+  const data = {
+    semantic,
+    associative,
+    semanticMap: new Map(semantic.map(({ word: w, score }) => [w, score])),
+  };
 
   relCache[key] = data;
   return data;
+}
+
+function buildNeighborWeightMap(entries, limit, scoreScale = 0) {
+  const top = entries.slice(0, limit);
+  const size = Math.max(1, top.length);
+  return new Map(top.map(({ word, score }, index) => {
+    const rankWeight = 1 - (index / size) * 0.65;
+    const scoreWeight = scoreScale > 0
+      ? 0.45 + Math.min(1, Math.max(0, score) / scoreScale) * 0.55
+      : 1;
+    return [word, rankWeight * scoreWeight];
+  }));
+}
+
+function getWeightedJaccard(mapA, mapB) {
+  const keys = new Set([...mapA.keys(), ...mapB.keys()]);
+  let intersection = 0;
+  let union = 0;
+  for (const key of keys) {
+    const a = mapA.get(key) ?? 0;
+    const b = mapB.get(key) ?? 0;
+    intersection += Math.min(a, b);
+    union += Math.max(a, b);
+  }
+  return union > 0 ? intersection / union : 0;
 }
 
 async function getSimilarity(w1, w2) {
@@ -278,31 +282,33 @@ async function getSimilarity(w1, w2) {
   const lo1 = w2.toLowerCase();
   const lo2 = w1.toLowerCase();
 
-  // Direct-match score: does each word appear in the other's related list?
-  const m1 = rel1.find(r => r.word === lo1);
-  const m2 = rel2.find(r => r.word === lo2);
-  const directBest = Math.max(m1 ? m1.score : 0, m2 ? m2.score : 0);
-  // Datamuse scores peak around 5000 for close synonyms; normalize to [0,1].
-  const directNorm = Math.min(1, directBest / 5000);
+  // Use semantic direct matches only; associative lists are too noisy for
+  // one-to-one synonym strength and were causing unrelated jumps.
+  const directBest = Math.max(
+    rel1.semanticMap.get(lo1) ?? 0,
+    rel2.semanticMap.get(lo2) ?? 0
+  );
+  const directNorm = Math.min(1, directBest / CONFIG.semanticDirectScoreScale);
 
-  // Shared-neighbours (Jaccard) on the top-200 results from each word.
-  // Two words that share many neighbours are conceptually close even when
-  // they are not synonyms (e.g. "water" and "mountain" both relate to
-  // "river", "lake", "snow", etc.).
-  const N = 200;
-  const set1 = new Set(rel1.slice(0, N).map(r => r.word));
-  const set2 = new Set(rel2.slice(0, N).map(r => r.word));
-  let shared = 0;
-  for (const w of set1) { if (set2.has(w)) shared++; }
-  const union = set1.size + set2.size - shared;
-  const jaccard = union > 0 ? shared / union : 0;
-  // Multiply by 5 so a jaccard of 0.10 (10 % shared neighbours) maps to
-  // a similarity of 0.50, and 0.20 saturates at 1.0.
-  const sharedNorm = Math.min(1, jaccard * 5);
+  // Compare semantic and associative neighborhoods separately, then blend them
+  // with a small associative contribution so related topics help without
+  // dominating the score.
+  const semanticOverlap = getWeightedJaccard(
+    buildNeighborWeightMap(rel1.semantic, CONFIG.semanticNeighborLimit, CONFIG.semanticDirectScoreScale),
+    buildNeighborWeightMap(rel2.semantic, CONFIG.semanticNeighborLimit, CONFIG.semanticDirectScoreScale)
+  );
+  const associativeOverlap = getWeightedJaccard(
+    buildNeighborWeightMap(rel1.associative, CONFIG.associativeNeighborLimit),
+    buildNeighborWeightMap(rel2.associative, CONFIG.associativeNeighborLimit)
+  );
 
-  const norm = Math.max(directNorm, sharedNorm);
+  const norm = Math.min(
+    1,
+    directNorm * CONFIG.similarityDirectWeight +
+    semanticOverlap * CONFIG.similaritySemanticWeight +
+    associativeOverlap * CONFIG.similarityAssociativeWeight
+  );
   simCache[key] = norm;
-  simDebugCache[key] = { directNorm, rawJaccard: jaccard };
   return norm;
 }
 
