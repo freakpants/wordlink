@@ -162,6 +162,17 @@ function updateThresholdCopy() {
   });
 }
 
+function hydrateVersionTag() {
+  const versionEl = document.getElementById('version-tag');
+  if (!versionEl) return;
+  const rawVersion = (versionEl.dataset?.version || '').trim();
+  const isInjectedSha = rawVersion && !rawVersion.includes('__COMMIT_SHA__');
+  const versionText = isInjectedSha ? rawVersion : 'local';
+  versionEl.dataset.version = versionText;
+  versionEl.textContent = versionText;
+  versionEl.title = `Version: ${versionText}`;
+}
+
 function getSimilarityDisplayPercent(_sourceWord, _targetWord, sim) {
   if (sim === null || sim === undefined) return null;
   const normalized = Math.max(0, Math.min(1, sim));
@@ -1322,6 +1333,7 @@ function init() {
   similarityPanelEl = document.getElementById('similarity-panel');
   similarityListEl = document.getElementById('similarity-list');
   updateThresholdCopy();
+  hydrateVersionTag();
 
   // Size the SVG
   svg.setAttribute('width',  CONFIG.canvasW);
