@@ -168,7 +168,7 @@ function updateThresholdCopy() {
 function hydrateVersionTag() {
   const versionEl = document.getElementById('version-tag');
   if (!versionEl) return;
-  const rawVersion = (versionEl.dataset.version || '').trim();
+  const rawVersion = (versionEl.dataset?.version || '').trim();
   const isInjectedSha = rawVersion && !rawVersion.includes('__COMMIT_SHA__');
   const versionText = isInjectedSha ? rawVersion : 'local';
   versionEl.textContent = versionText;
