@@ -165,6 +165,16 @@ function updateThresholdCopy() {
   });
 }
 
+function hydrateVersionTag() {
+  const versionEl = document.getElementById('version-tag');
+  if (!versionEl) return;
+  const rawVersion = (versionEl.dataset.version || '').trim();
+  const isInjectedSha = rawVersion && !rawVersion.includes('__COMMIT_SHA__');
+  const versionText = isInjectedSha ? rawVersion : 'local';
+  versionEl.textContent = versionText;
+  versionEl.title = `Version: ${versionText}`;
+}
+
 function getSimilarityDisplayPercent(sourceWord, targetWord, sim) {
   if (sim === null || sim === undefined) return null;
   const dbg = simDebugCache[simCacheKey(sourceWord, targetWord)];
@@ -1316,6 +1326,7 @@ function init() {
   similarityPanelEl = document.getElementById('similarity-panel');
   similarityListEl = document.getElementById('similarity-list');
   updateThresholdCopy();
+  hydrateVersionTag();
 
   // Size the SVG
   svg.setAttribute('width',  CONFIG.canvasW);
